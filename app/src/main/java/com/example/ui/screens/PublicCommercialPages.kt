@@ -93,6 +93,7 @@ import kotlinx.coroutines.delay
 fun PricingScreen(
     viewModel: BankViewModel,
     onNavigateBack: () -> Unit,
+    onNavigateToPaidEdition: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTier by remember { mutableStateOf("Enterprise Pro") }
@@ -114,6 +115,46 @@ fun PricingScreen(
                 color = GoldAccent,
                 onBack = onNavigateBack
             )
+        }
+
+        // --- Direct Paid Version & Download License Pass Banner ---
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = NavyCard),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, GoldAccent)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(GoldAccent.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Star, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(26.dp))
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Looking for PFIN Paid Edition?", color = TextWhite, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        Text("Download activation, monthly/annual passes & lifetime licenses ($9.99/mo to $199 lifetime).", color = TextMuted, fontSize = 10.sp)
+                    }
+
+                    Button(
+                        onClick = onNavigateToPaidEdition,
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldAccent, contentColor = Navy900),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.testTag("pricing_to_paid_edition_btn")
+                    ) {
+                        Text("Get Pro", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+            }
         }
 
         val tiers = listOf(

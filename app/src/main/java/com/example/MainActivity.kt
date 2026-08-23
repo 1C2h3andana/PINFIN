@@ -122,6 +122,7 @@ import com.example.ui.screens.NotificationsDashboardScreen
 import com.example.ui.screens.OtpVerificationScreen
 import com.example.ui.screens.PersonalDashboardScreen
 import com.example.ui.screens.PersonalizedRecommendationsDashboardScreen
+import com.example.ui.screens.PaidEditionScreen
 import com.example.ui.screens.PricingScreen
 import com.example.ui.screens.PrivacyPolicyScreen
 import com.example.ui.screens.RecentActivitiesDashboardScreen
@@ -238,6 +239,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Solutions : Screen("solutions", "Solutions", Icons.Default.Handshake)
     object Industries : Screen("industries", "Industries", Icons.Default.Apartment)
     object Pricing : Screen("pricing", "Pricing & Plans", Icons.Default.TrendingUp)
+    object PaidEdition : Screen("paid_edition", "Paid Edition & License", Icons.Default.Star)
     object SuccessStories : Screen("success_stories", "Success Stories", Icons.Default.Star)
     object Blog : Screen("blog", "Blog & Insights", Icons.Default.MenuBook)
     object ResearchCenter : Screen("research_center", "Research Center", Icons.Default.Science)
@@ -615,6 +617,18 @@ fun MainAppScaffold(viewModel: BankViewModel) {
                             Icon(imageVector = Icons.Default.Public, contentDescription = "Public Portal", tint = if (currentRoute == Screen.Landing.route) CyberCyan else TextMuted)
                         }
 
+                        // Paid Edition & Pro License Button
+                        IconButton(
+                            onClick = { navigateTo(Screen.PaidEdition.route) },
+                            modifier = Modifier.testTag("nav_top_paid_edition_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "PFIN Pro Edition",
+                                tint = if (currentRoute == Screen.PaidEdition.route) AmberOrange else GoldAccent
+                            )
+                        }
+
                         // Future Financial OS (2050-2077) Master Hub
                         IconButton(
                             onClick = { navigateTo(Screen.FutureOs.route) },
@@ -817,7 +831,19 @@ fun MainAppScaffold(viewModel: BankViewModel) {
                     IndustriesScreen(viewModel = viewModel, onNavigateBack = { navController.popBackStack() })
                 }
                 composable(Screen.Pricing.route) {
-                    PricingScreen(viewModel = viewModel, onNavigateBack = { navController.popBackStack() })
+                    PricingScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() },
+                        onNavigateToPaidEdition = { navController.navigate(Screen.PaidEdition.route) }
+                    )
+                }
+                composable(Screen.PaidEdition.route) {
+                    PaidEditionScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() },
+                        onOpenTerms = { navController.navigate(Screen.Terms.route) },
+                        onOpenPrivacy = { navController.navigate(Screen.Privacy.route) }
+                    )
                 }
                 composable(Screen.SuccessStories.route) {
                     SuccessStoriesScreen(viewModel = viewModel, onNavigateBack = { navController.popBackStack() })

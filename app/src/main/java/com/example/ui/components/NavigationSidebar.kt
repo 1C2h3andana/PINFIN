@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Apartment
@@ -115,6 +116,7 @@ fun NavigationSidebarContent(
 
     val publicPortalItems = remember {
         listOf(
+            NavCategoryItem(Screen.PaidEdition, "Download Activation & Pro License", GoldAccent, "PAID / PRO"),
             NavCategoryItem(Screen.Landing, "Homepage & Value Proposition", CyberCyan, "PORTAL"),
             NavCategoryItem(Screen.AboutPfin, "Post-Quantum Architecture", CyberCyan),
             NavCategoryItem(Screen.VisionMission, "2050–2077 Planetary Vision", CyberCyan),
@@ -585,6 +587,51 @@ fun NavigationSidebarContent(
                 .height(48.dp)
                 .testTag("sidebar_search_input")
         )
+
+        // --- VIP Pro / Paid Edition Quick CTA Card ---
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .clickable { onNavigate(Screen.PaidEdition.route) }
+                .testTag("sidebar_vip_pro_banner"),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = NavyCard),
+            border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.7f))
+        ) {
+            Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(GoldAccent.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = "Pro Pass",
+                        tint = GoldAccent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("PFIN PRO & PAID EDITION", color = TextWhite, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                        Surface(color = GoldAccent, shape = RoundedCornerShape(4.dp)) {
+                            Text("VIP", color = Navy900, fontSize = 8.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                        }
+                    }
+                    Text("Download License & Unlimited AI Rails", color = CyberCyan, fontSize = 9.sp)
+                }
+
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(16.dp))
+            }
+        }
 
         // --- 3. Scrollable Categorized Nav Items ---
         LazyColumn(

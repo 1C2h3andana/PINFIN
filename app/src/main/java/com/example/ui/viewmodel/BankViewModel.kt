@@ -23,6 +23,7 @@ import com.example.data.model.PolicyStatus
 import com.example.data.model.RiskEvaluation
 import com.example.data.model.RiskLevel
 import com.example.data.model.SavingsGoalEntity
+import com.example.data.model.SecurityEventType
 import com.example.data.model.SecurityLogEntity
 import com.example.data.model.SupportTicketEntity
 import com.example.data.model.TransactionCategory
@@ -228,6 +229,58 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
     // Admin Fraud Sensitivity
     private val _fraudSensitivity = MutableStateFlow("Balanced AI Model")
     val fraudSensitivity: StateFlow<String> = _fraudSensitivity.asStateFlow()
+
+    // Paid Version & Membership Tier State
+    private val _activeMembershipTier = MutableStateFlow(MembershipTier.PRO_PLANETARY)
+    val activeMembershipTier: StateFlow<MembershipTier> = _activeMembershipTier.asStateFlow()
+
+    private val _isPaidVersionUnlocked = MutableStateFlow(true)
+    val isPaidVersionUnlocked: StateFlow<Boolean> = _isPaidVersionUnlocked.asStateFlow()
+
+    private val _activeLicenseKey = MutableStateFlow("PFIN-SOVEREIGN-KYBER-2026-X89")
+    val activeLicenseKey: StateFlow<String> = _activeLicenseKey.asStateFlow()
+
+    private val _subscriptionRenewalDate = MutableStateFlow("Aug 23, 2027 (Annual Pass)")
+    val subscriptionRenewalDate: StateFlow<String> = _subscriptionRenewalDate.asStateFlow()
+
+    fun activatePaidPlan(tier: MembershipTier, paymentMethod: String, promoCode: String? = null) {
+        _activeMembershipTier.value = tier
+        _isPaidVersionUnlocked.value = true
+        val randomHex = (1000..9999).random()
+        val generatedKey = when (tier) {
+            MembershipTier.QUANTUM_SOVEREIGN -> "PFIN-QUANTUM-LIFETIME-$randomHex-LATTICE"
+            MembershipTier.PRO_PLANETARY -> "PFIN-PRO-ANNUAL-$randomHex-KYBER"
+            MembershipTier.ENTERPRISE_INSTITUTIONAL -> "PFIN-ENTERPRISE-NODE-$randomHex-VPC"
+            MembershipTier.FREE_CITIZEN -> "PFIN-CITIZEN-FREE-TIER"
+        }
+        _activeLicenseKey.value = generatedKey
+        _subscriptionRenewalDate.value = if (tier == MembershipTier.QUANTUM_SOVEREIGN) "Lifetime Access (Never Expires)" else "Aug 23, 2027 (Auto-Renews)"
+        
+        viewModelScope.launch {
+            repository.logSecurityEvent(
+                SecurityEventType.LIMIT_UPDATED,
+                "Planetary License $generatedKey (${tier.displayName}) activated via $paymentMethod.",
+                RiskLevel.LOW
+            )
+        }
+        showMessage("✓ Payment Successful! ${tier.displayName} license activated.")
+    }
+
+    fun redeemPromoCode(code: String): Boolean {
+        val trimmed = code.trim().uppercase()
+        return if (trimmed == "PLANET2026" || trimmed == "EARLYBIRD" || trimmed == "VIP100" || trimmed == "STUDENT" || trimmed == "PROPASS") {
+            activatePaidPlan(MembershipTier.QUANTUM_SOVEREIGN, "VIP Promo Code ($trimmed)")
+            true
+        } else {
+            showMessage("Invalid Promo / Activation Code. Please check and try again.")
+            false
+        }
+    }
+
+    fun restorePurchases() {
+        _isPaidVersionUnlocked.value = true
+        showMessage("✓ Active Google Play & Cloud Subscriptions successfully restored.")
+    }
 
     // Total Net Worth derived
     val totalNetWorth: StateFlow<Double>
@@ -1001,6 +1054,43 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
 enum class MessageSender {
     USER,
     AI
+}
+
+enum class MembershipTier(
+    val displayName: String,
+    val monthlyPrice: String,
+    val annualPrice: String,
+    val lifetimePrice: String,
+    val subtitle: String
+) {
+    FREE_CITIZEN(
+        "Citizen Standard (Trial)",
+        "$0",
+        "$0",
+        "$0",
+        "Basic ledger, standard transactions & community AI"
+    ),
+    PRO_PLANETARY(
+        "Planetary Pro Edition",
+        "$9.99/mo",
+        "$89.99/yr",
+        "$199 Lifetime",
+        "Full AI Advisor, Digital Twin, Zero Wire Fees & Smart Cities"
+    ),
+    QUANTUM_SOVEREIGN(
+        "Quantum Sovereign Lifetime",
+        "$29.99/mo",
+        "$249/yr",
+        "$499 Sovereign",
+        "Post-Quantum Kyber-1024 Vault, Space Mesh & VIP Concierge"
+    ),
+    ENTERPRISE_INSTITUTIONAL(
+        "Institutional Node",
+        "$499/mo",
+        "$4,990/yr",
+        "Custom SLA",
+        "Multi-org Treasury, Central Bank CBDC Bridges & API Rails"
+    )
 }
 
 data class ChatMessage(
