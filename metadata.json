@@ -1,0 +1,6 @@
+{
+  "name": "SmartBank AI",
+  "description": "AI-Powered Secure Smart Banking & Financial Protection Platform with real-time fraud detection, budgeting, loan prediction, and security intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
