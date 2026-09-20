@@ -60,6 +60,7 @@ import com.example.data.model.SavingsGoalEntity
 import com.example.data.model.TransactionCategory
 import com.example.data.model.TransactionEntity
 import com.example.data.model.TransactionType
+import com.example.ui.components.D3SpendingTrendsChart
 import com.example.ui.components.ExportReportDialog
 import com.example.ui.theme.AmberOrange
 import com.example.ui.theme.CrimsonDanger
@@ -196,7 +197,15 @@ fun AnalyticsScreen(
             }
         }
 
-        // --- 2. Category Budget Breakdown ---
+        // --- 2. D3.js 30-Day Spending Trends Line Chart ---
+        item {
+            D3SpendingTrendsChart(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // --- 3. Category Budget Breakdown ---
         item {
             Text("CATEGORY ALLOCATIONS & LIMITS", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
         }

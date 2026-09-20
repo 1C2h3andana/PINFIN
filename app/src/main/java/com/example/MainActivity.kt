@@ -1,10 +1,10 @@
 package com.example
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,6 +75,8 @@ import androidx.navigation.compose.rememberNavController
 import com.example.data.model.UserRole
 import com.example.ui.components.AdminOnlyGuard
 import com.example.ui.components.AuthDialog
+import com.example.ui.components.BiometricAppLockOverlay
+import com.example.ui.components.BiometricScreenGuard
 import com.example.ui.components.DepositWithdrawDialog
 import com.example.ui.components.NavigationSidebarContent
 import com.example.ui.components.NotificationsDialog
@@ -444,7 +446,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object HelpSupportCenterPage : Screen("help_support_center", "Help & AI Support", Icons.Default.SupportAgent)
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val viewModel: BankViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -452,9 +454,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
+            val isBiometricsEnabled by viewModel.isBiometricsEnabled.collectAsStateWithLifecycle()
+            val isAppUnlocked by viewModel.isAppUnlocked.collectAsStateWithLifecycle()
+
             MyApplicationTheme(darkTheme = isDarkMode) {
                 SecurityContextProvider(viewModel = viewModel) {
-                    MainAppScaffold(viewModel = viewModel)
+                    if (isBiometricsEnabled && !isAppUnlocked) {
+                        BiometricAppLockOverlay(viewModel = viewModel)
+                    } else {
+                        MainAppScaffold(viewModel = viewModel)
+                    }
                 }
             }
         }
@@ -755,7 +764,13 @@ fun MainAppScaffold(viewModel: BankViewModel) {
                 }
                 composable(Screen.Admin.route) {
                     AdminOnlyGuard(viewModel = viewModel, requiredClearance = SecurityClearanceLevel.ROOT_ADMIN_LEVEL_5) {
-                        AdminPanelScreen(viewModel = viewModel)
+                        BiometricScreenGuard(
+                            viewModel = viewModel,
+                            screenTitle = "Root Admin Control Panel",
+                            screenSubtitle = "Biometric clearance verification required for Root Ledger & Audit Enclave"
+                        ) {
+                            AdminPanelScreen(viewModel = viewModel)
+                        }
                     }
                 }
                 composable(Screen.Bills.route) {

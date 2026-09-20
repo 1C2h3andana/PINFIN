@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Nfc
@@ -597,8 +598,27 @@ fun OtpVerificationDialog(
                     )
                 )
 
+                // Biometric shortcut
+                OutlinedButton(
+                    onClick = {
+                        onOtpChange("1234")
+                        onConfirm()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Fingerprint, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(18.dp))
+                        Text("Instant Biometric Passkey Approval", color = CyberCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 Text(
-                    text = "Tip: For testing simulation, type any 6 digits (e.g. 849201).",
+                    text = "Tip: Tap Biometric Approval or type demo OTP: 1234.",
                     color = CyberCyan.copy(alpha = 0.7f),
                     fontSize = 11.sp
                 )

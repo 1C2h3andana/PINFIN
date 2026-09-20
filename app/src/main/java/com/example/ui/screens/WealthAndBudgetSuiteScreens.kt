@@ -23,6 +23,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.os.Build
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.core.content.ContextCompat
+import com.example.data.model.NotificationType
+import com.example.service.BudgetAlertLevel
+import com.example.service.BudgetAlertResult
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.BankViewModel
 
@@ -546,26 +556,268 @@ fun BudgetExpenseCategoriesScreen(viewModel: BankViewModel, modifier: Modifier =
 }
 
 // -------------------------------------------------------------------------
-// 12. GOAL TRACKING SCREEN
+// 12. GOAL TRACKING SCREEN (ROOM BUDGET GOAL SENTINEL & WORKER)
 // -------------------------------------------------------------------------
 @Composable
 fun GoalTrackingScreen(viewModel: BankViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val budgetGoals by viewModel.budgetGoalsList.collectAsStateWithLifecycle()
+    val alertResults by viewModel.budgetAlertResults.collectAsStateWithLifecycle()
+
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission = granted
+        if (granted) {
+            viewModel.showMessage("Notification permission granted.")
+            viewModel.checkBudgetGoals(forceNotify = true)
+        }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Sentinel & Background Worker Control Center Card
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Navy800),
                 shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth()
+                border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth().testTag("budget_sentinel_panel")
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Strategic Financial Goals", color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Budget Sentinel & Worker",
+                                color = CyberCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                "Checks Room BudgetGoals vs transactions and sends system notifications on approaching (≥80%) or exceeding (≥100%) targets.",
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = { permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
+                            colors = ButtonDefaults.buttonColors(containerColor = AmberOrange),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("enable_notifications_btn")
+                        ) {
+                            Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color.Black)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Enable System Notifications", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                                viewModel.triggerBudgetWorkerNow()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("check_budget_goals_button")
+                        ) {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Run Worker", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                                viewModel.triggerBudgetServiceNow()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberCyan),
+                            border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("run_service_check_button")
+                        ) {
+                            Icon(Icons.Default.Sensors, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Run Service", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                "Active Room Budget Targets (${budgetGoals.size})",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
+
+        if (budgetGoals.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Navy800),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("No Budget Goals stored in Room database.", color = TextMuted, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                viewModel.addBudgetGoal("Food & Dining", 500.0, "End of Month", 420.0)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue)
+                        ) {
+                            Text("Seed Food Budget Goal")
+                        }
+                    }
+                }
+            }
+        }
+
+        items(budgetGoals, key = { it.id }) { goal ->
+            val ratio = if (goal.targetAmount > 0) (goal.currentProgress / goal.targetAmount).toFloat() else 0f
+            val isExceeded = ratio >= 1.0f
+            val isApproaching = ratio >= 0.80f && ratio < 1.0f
+
+            val statusColor = when {
+                isExceeded -> CrimsonDanger
+                isApproaching -> AmberOrange
+                else -> EmeraldSuccess
+            }
+
+            val statusLabel = when {
+                isExceeded -> "🚨 EXCEEDED TARGET"
+                isApproaching -> "⚠️ APPROACHING (≥80%)"
+                else -> "✓ ON TRACK"
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Navy800),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, statusColor.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth().testTag("budget_goal_card_${goal.id}")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(goal.category, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Deadline: ${goal.deadline}", color = TextMuted, fontSize = 11.sp)
+                        }
+
+                        Surface(
+                            color = statusColor.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, statusColor.copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                statusLabel,
+                                color = statusColor,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LinearProgressIndicator(
+                        progress = { ratio.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = statusColor,
+                        trackColor = Navy900
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "Spent: $${"%,.2f".format(goal.currentProgress)}",
+                            color = statusColor,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            "Target: $${"%,.2f".format(goal.targetAmount)} (${(ratio * 100).toInt()}%)",
+                            color = TextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
-                    SectorProgressRow("Primary Home Downpayment ($100k)", 0.85f, GoldAccent, "$85,000 (85%)")
-                    SectorProgressRow("Private Angel Investment Pool ($50k)", 0.60f, CyberCyan, "$30,000 (60%)")
-                    SectorProgressRow("New EV Purchase ($45k)", 0.95f, EmeraldSuccess, "$42,750 (95%)")
+                    HorizontalDivider(color = Navy600.copy(alpha = 0.5f), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                viewModel.recordExpenseForBudgetGoal(goal.id, goal.category, 50.0)
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("add_spend_50_${goal.id}")
+                        ) {
+                            Text("+ $50 Spend", fontSize = 11.sp)
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                viewModel.recordExpenseForBudgetGoal(goal.id, goal.category, 150.0)
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("add_spend_150_${goal.id}")
+                        ) {
+                            Text("+ $150 Spend", fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }
@@ -600,32 +852,112 @@ fun SavingsGoalsScreen(viewModel: BankViewModel, modifier: Modifier = Modifier) 
 }
 
 // -------------------------------------------------------------------------
-// 14. SPENDING ALERTS SCREEN
+// 14. SPENDING ALERTS SCREEN (REAL-TIME SENTINEL ALERTS)
 // -------------------------------------------------------------------------
 @Composable
 fun SpendingAlertsScreen(viewModel: BankViewModel, modifier: Modifier = Modifier) {
+    val alerts by viewModel.budgetAlertResults.collectAsStateWithLifecycle()
+    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+    val transactionAlerts = notifications.filter { it.type == NotificationType.TRANSACTION_ALERT }
+
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text("Real-Time Spending Velocity Alerts", color = AmberOrange, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Real-Time Spending Velocity Alerts",
+                    color = AmberOrange,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                IconButton(
+                    onClick = { viewModel.checkBudgetGoals(forceNotify = true) },
+                    modifier = Modifier.testTag("refresh_spending_alerts_button")
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh Alerts", tint = CyberCyan)
+                }
+            }
         }
-        val alerts = listOf(
-            Pair("Dining Out Budget Exceeded 80%", "You have spent $800 of your $1,000 monthly allotment."),
-            Pair("Unusual High Cloud Computing Charge", "AWS billed $420.00 today (normally $150.00)."),
-            Pair("Annual Subscription Renewal Due", "Domain & Hosting renewals occurring in 3 days.")
-        )
-        items(alerts) { (title, desc) ->
+
+        if (alerts.none { it.level != BudgetAlertLevel.NORMAL } && transactionAlerts.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Navy800),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldSuccess, modifier = Modifier.size(36.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("All Goals Within Safe Limits", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("The background worker is actively monitoring your Room spending.", color = TextMuted, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        items(alerts.filter { it.level != BudgetAlertLevel.NORMAL }, key = { "alert_${it.goalId}" }) { alert ->
+            val isExceeded = alert.level == BudgetAlertLevel.EXCEEDED
+            val color = if (isExceeded) CrimsonDanger else AmberOrange
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = Navy800),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, color.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().testTag("spending_alert_card_${alert.goalId}")
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Text(title, color = AmberOrange, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            alert.alertTitle,
+                            color = color,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        if (alert.notificationSent) {
+                            Surface(
+                                color = EmeraldSuccess.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text("NOTIFIED", color = EmeraldSuccess, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(desc, color = TextMuted, fontSize = 12.sp)
+                    Text(alert.alertMessage, color = TextMuted, fontSize = 12.sp)
+                }
+            }
+        }
+
+        if (transactionAlerts.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Dispatched System Alerts History", color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+            items(transactionAlerts.take(10), key = { "history_${it.id}" }) { item ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Navy800.copy(alpha = 0.7f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(item.title, color = AmberOrange, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(item.message, color = TextMuted, fontSize = 11.sp)
+                    }
                 }
             }
         }

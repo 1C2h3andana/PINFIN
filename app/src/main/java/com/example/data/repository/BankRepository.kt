@@ -10,6 +10,7 @@ import com.example.data.model.AssetType
 import com.example.data.model.BillEntity
 import com.example.data.model.BudgetEntity
 import com.example.data.model.ClaimStatus
+import com.example.data.model.DailySpendingPoint
 import com.example.data.model.InsuranceClaimEntity
 import com.example.data.model.InsurancePolicyEntity
 import com.example.data.model.InsuranceType
@@ -34,6 +35,11 @@ import com.example.domain.engine.FraudDetectionEngine
 import com.example.domain.security.AuthCrypto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class BankRepository(private val bankDao: BankDao) {
 
@@ -52,6 +58,14 @@ class BankRepository(private val bankDao: BankDao) {
     val notifications: Flow<List<NotificationEntity>> = bankDao.getAllNotifications()
     val securityLogs: Flow<List<SecurityLogEntity>> = bankDao.getAllSecurityLogs()
     val supportTickets: Flow<List<SupportTicketEntity>> = bankDao.getAllTickets()
+
+    /**
+     * Observable reactive stream of 30 daily spending data points aggregated from Room database.
+     * Evaluates all completed DEBIT transactions over the last 30 days.
+     */
+    val spendingTrendsLast30Days: Flow<List<DailySpendingPoint>> =
+        bankDao.getSpendingTransactionsSince(System.currentTimeMillis() - (30L * 86_400_000L))
+            .map { txList -> calculateDailySpending(txList, 30) }
 
     suspend fun seedInitialDataIfEmpty() {
         // 1. Seed Users
@@ -279,6 +293,160 @@ class BankRepository(private val bankDao: BankDao) {
                     riskLevel = RiskLevel.HIGH,
                     riskReason = "AML Tier 2 Flag: Cross-border high value wire to offshore jurisdiction",
                     is2FaVerified = true
+                ),
+                TransactionEntity(
+                    id = 8,
+                    accountId = 1,
+                    title = "Metro Rail & Transit Pass",
+                    recipient = "MTA Transit NY",
+                    upiOrHandle = "mta.metro@omny.info",
+                    amount = 132.00,
+                    category = TransactionCategory.OTHER,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (7 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 2,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 9,
+                    accountId = 1,
+                    title = "Blue Bottle Artisan Espresso",
+                    recipient = "Blue Bottle Coffee",
+                    upiOrHandle = "bluebottle@pos.square",
+                    amount = 18.50,
+                    category = TransactionCategory.FOOD,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (9 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 1,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 10,
+                    accountId = 1,
+                    title = "Amazon Prime & Electronics",
+                    recipient = "Amazon Retail",
+                    upiOrHandle = "payments@amazon.com",
+                    amount = 179.90,
+                    category = TransactionCategory.SHOPPING,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (11 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 5,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 11,
+                    accountId = 1,
+                    title = "Trader Joe's Fresh Market",
+                    recipient = "Trader Joe's",
+                    upiOrHandle = "tj902@grocerypay.us",
+                    amount = 94.60,
+                    category = TransactionCategory.FOOD,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (13 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 2,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 12,
+                    accountId = 1,
+                    title = "Equinox Fitness Health Club",
+                    recipient = "Equinox Gyms",
+                    upiOrHandle = "membership@equinox.com",
+                    amount = 240.00,
+                    category = TransactionCategory.HEALTHCARE,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (15 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 2,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 13,
+                    accountId = 1,
+                    title = "Uber Executive Airport Ride",
+                    recipient = "Uber Technologies",
+                    upiOrHandle = "uber.us@uberpay.com",
+                    amount = 58.40,
+                    category = TransactionCategory.OTHER,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (18 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 3,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 14,
+                    accountId = 1,
+                    title = "Barnes & Noble Tech Guides",
+                    recipient = "Barnes & Noble",
+                    upiOrHandle = "bn.union_sq@retail",
+                    amount = 45.00,
+                    category = TransactionCategory.EDUCATION,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (20 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 2,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 15,
+                    accountId = 1,
+                    title = "Sweetgreen Healthy Dining",
+                    recipient = "Sweetgreen NYC",
+                    upiOrHandle = "pos.sg48@greenpay",
+                    amount = 22.80,
+                    category = TransactionCategory.FOOD,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (22 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 1,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 16,
+                    accountId = 1,
+                    title = "Target Household Restock",
+                    recipient = "Target Stores",
+                    upiOrHandle = "target.pay@target.com",
+                    amount = 115.30,
+                    category = TransactionCategory.SHOPPING,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (25 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 4,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 17,
+                    accountId = 1,
+                    title = "Shell Highway Fuel & Service",
+                    recipient = "Shell Oil Station",
+                    upiOrHandle = "station.shell71@fuelpay",
+                    amount = 62.50,
+                    category = TransactionCategory.OTHER,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (27 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 3,
+                    riskLevel = RiskLevel.LOW
+                ),
+                TransactionEntity(
+                    id = 18,
+                    accountId = 1,
+                    title = "Nobu Downtown Fine Dining",
+                    recipient = "Nobu Downtown",
+                    upiOrHandle = "nobu.hospitality@nydining",
+                    amount = 285.00,
+                    category = TransactionCategory.FOOD,
+                    type = TransactionType.DEBIT,
+                    timestamp = now - (29 * dayMs),
+                    status = TransactionStatus.COMPLETED,
+                    riskScore = 6,
+                    riskLevel = RiskLevel.LOW
                 )
             )
             bankDao.insertTransactions(defaultTransactions)
@@ -830,5 +998,56 @@ class BankRepository(private val bankDao: BankDao) {
             severity = severity
         )
         bankDao.insertSecurityLog(log)
+    }
+
+    companion object {
+        /**
+         * Aggregates transactions into discrete daily spending points over the specified number of days (default 30).
+         * Calculates total expenditure per day and transaction count for rendering in D3.js line charts.
+         */
+        fun calculateDailySpending(
+            transactions: List<TransactionEntity>,
+            days: Int = 30
+        ): List<DailySpendingPoint> {
+            val calendar = Calendar.getInstance()
+            calendar.set(Calendar.HOUR_OF_DAY, 0)
+            calendar.set(Calendar.MINUTE, 0)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            val todayStart = calendar.timeInMillis
+            val oneDayMs = 86_400_000L
+
+            val shortDateFormat = SimpleDateFormat("MMM dd", Locale.US)
+            val isoDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+
+            val result = mutableListOf<DailySpendingPoint>()
+
+            for (i in (days - 1) downTo 0) {
+                val dayStart = todayStart - (i * oneDayMs)
+                val dayEnd = dayStart + oneDayMs
+                val dayDate = Date(dayStart)
+
+                val dayTx = transactions.filter { tx ->
+                    tx.type == TransactionType.DEBIT &&
+                    tx.status != TransactionStatus.BLOCKED_FRAUD &&
+                    tx.status != TransactionStatus.REVERTED &&
+                    tx.timestamp in dayStart until dayEnd
+                }
+
+                val totalSpent = dayTx.sumOf { it.amount }
+                val count = dayTx.size
+
+                result.add(
+                    DailySpendingPoint(
+                        date = shortDateFormat.format(dayDate),
+                        fullDate = isoDateFormat.format(dayDate),
+                        timestamp = dayStart,
+                        amount = Math.round(totalSpent * 100.0) / 100.0,
+                        transactionCount = count
+                    )
+                )
+            }
+            return result
+        }
     }
 }

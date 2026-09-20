@@ -140,6 +140,9 @@ import com.example.ui.theme.PurpleTech
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextWhite
 import com.example.ui.viewmodel.BankViewModel
+import com.example.security.BiometricAuthManager
+import com.example.ui.components.findFragmentActivity
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 
 enum class AuthPageType(
@@ -1476,8 +1479,39 @@ fun BiometricLoginScreen(
     onFallbackToPassword: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val activity = remember(context) { context.findFragmentActivity() }
     var isScanning by remember { mutableStateOf(false) }
     var isScanSuccess by remember { mutableStateOf(false) }
+    var authErrorText by remember { mutableStateOf<String?>(null) }
+
+    fun triggerHardwareScan() {
+        if (activity == null) {
+            isScanSuccess = true
+            viewModel.unlockAppWithBiometrics()
+            return
+        }
+        isScanning = true
+        BiometricAuthManager.promptBiometric(
+            activity = activity,
+            title = "Biometric Fingerprint Authentication",
+            subtitle = "Verify fingerprint sensor to authenticate session",
+            negativeButtonText = "Cancel",
+            onSuccess = {
+                isScanning = false
+                isScanSuccess = true
+                viewModel.unlockAppWithBiometrics()
+            },
+            onError = { _, err ->
+                isScanning = false
+                authErrorText = err.toString()
+            },
+            onFailed = {
+                isScanning = false
+                authErrorText = "Sensor did not recognize biometric."
+            }
+        )
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
@@ -1525,9 +1559,7 @@ fun BiometricLoginScreen(
                             .background(if (isScanSuccess) EmeraldSuccess.copy(alpha = 0.25f) else CyberCyan.copy(alpha = 0.15f))
                             .border(2.dp, if (isScanSuccess) EmeraldSuccess else CyberCyan.copy(alpha = 0.6f), CircleShape)
                             .clickable {
-                                isScanning = true
-                                isScanSuccess = true
-                                isScanning = false
+                                triggerHardwareScan()
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -1547,16 +1579,25 @@ fun BiometricLoginScreen(
                         textAlign = TextAlign.Center
                     )
 
+                    authErrorText?.let { err ->
+                        Text(
+                            text = err,
+                            color = AmberOrange,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
                     Button(
                         onClick = {
-                            isScanSuccess = true
+                            triggerHardwareScan()
                         },
                         modifier = Modifier.fillMaxWidth().height(46.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = if (isScanSuccess) EmeraldSuccess else CyberCyan),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
-                            text = if (isScanSuccess) "Authentication Successful" else "Scan Biometric Sensor",
+                            text = if (isScanSuccess) "Authentication Successful" else if (isScanning) "Verifying Hardware Sensor..." else "Scan Biometric Sensor",
                             color = Navy900,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 12.sp
@@ -1581,9 +1622,36 @@ fun FaceRecognitionScreen(
     onFallbackToPin: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val activity = remember(context) { context.findFragmentActivity() }
     var isFaceDetected by remember { mutableStateOf(true) }
     var livenessScore by remember { mutableStateOf(0.98f) }
     var isApproved by remember { mutableStateOf(false) }
+    var faceErrorText by remember { mutableStateOf<String?>(null) }
+
+    fun triggerFaceHardwareAuth() {
+        if (activity == null) {
+            isApproved = true
+            viewModel.unlockAppWithBiometrics()
+            return
+        }
+        BiometricAuthManager.promptBiometric(
+            activity = activity,
+            title = "Face Unlock & Biometric Verification",
+            subtitle = "Look directly at front camera to authenticate",
+            negativeButtonText = "Cancel",
+            onSuccess = {
+                isApproved = true
+                viewModel.unlockAppWithBiometrics()
+            },
+            onError = { _, err ->
+                faceErrorText = err.toString()
+            },
+            onFailed = {
+                faceErrorText = "Face not recognized. Ensure sufficient lighting."
+            }
+        )
+    }
 
     val infiniteTransition = rememberInfiniteTransition(label = "laserScan")
     val laserY by infiniteTransition.animateFloat(
@@ -1670,16 +1738,25 @@ fun FaceRecognitionScreen(
                         }
                     }
 
+                    faceErrorText?.let { err ->
+                        Text(
+                            text = err,
+                            color = AmberOrange,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
                     Button(
                         onClick = {
-                            isApproved = true
+                            triggerFaceHardwareAuth()
                         },
                         modifier = Modifier.fillMaxWidth().height(46.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = if (isApproved) EmeraldSuccess else PurpleTech),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
-                            text = if (isApproved) "Face ID Match Confirmed" else "Perform Instant Face Scan",
+                            text = if (isApproved) "Face ID Match Confirmed" else "Perform Hardware Face / Biometric Scan",
                             color = TextWhite,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 12.sp

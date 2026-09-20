@@ -318,6 +318,28 @@ fun SecurityCenterScreen(
                             testTag = "toggle_biometrics"
                         )
 
+                        if (isBiometricsEnabled) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Test Biometric Lock Now", color = TextMuted, fontSize = 12.sp)
+                                Button(
+                                    onClick = { viewModel.lockAppBiometric() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan.copy(alpha = 0.2f)),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan.copy(alpha = 0.5f)),
+                                    modifier = Modifier.testTag("lock_app_now_btn")
+                                ) {
+                                    Icon(Icons.Default.Lock, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Lock App Now", color = CyberCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
                         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Navy700))
 
                         SecurityToggleRow(

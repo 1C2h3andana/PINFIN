@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import java.util.Locale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -279,7 +280,153 @@ fun LoanCreditScreen(
             }
 
             1 -> {
-                // --- TAB 2: AI LOAN ELIGIBILITY PREDICTION ---
+                // --- TAB 2: GEMINI AI LOAN ELIGIBILITY PREDICTION ---
+                item {
+                    val geminiPrediction by viewModel.geminiLoanPrediction.collectAsStateWithLifecycle()
+                    val isEvaluating by viewModel.isEvaluatingLoanWithGemini.collectAsStateWithLifecycle()
+
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Quick Action Card to Predict with Gemini
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("gemini_predict_trigger_card"),
+                            colors = CardDefaults.cardColors(containerColor = NavyCard),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(20.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("GEMINI ROOM DATA UNDERWRITING", color = GoldAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Surface(
+                                        color = CyberCyan.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "gemini-3.5-flash",
+                                            color = CyberCyan,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    "Evaluates your eligibility by querying local Room database accounts, income/expense transactions, and active budget goals.",
+                                    color = TextMuted,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+
+                                Button(
+                                    onClick = {
+                                        viewModel.evaluateLoanEligibilityWithGemini(
+                                            requestedAmount = loanPrincipal,
+                                            loanTenureMonths = loanTenureMonths,
+                                            loanPurpose = selectedLoanType
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("evaluate_gemini_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                                    shape = RoundedCornerShape(12.dp),
+                                    enabled = !isEvaluating
+                                ) {
+                                    if (isEvaluating) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = TextWhite, strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Analyzing Room Data...", color = TextWhite, fontSize = 13.sp)
+                                    } else {
+                                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = GoldAccent)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Run Gemini Credit Evaluation", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Gemini Prediction result card if available
+                        geminiPrediction?.let { pred ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth().testTag("gemini_evaluation_result_card"),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (pred.isEligible) Color(0xFF064E3B).copy(alpha = 0.5f) else Color(0xFF450A0A).copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(18.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (pred.isEligible) EmeraldSuccess else CrimsonDanger
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Icon(
+                                                imageVector = if (pred.isEligible) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                                contentDescription = null,
+                                                tint = if (pred.isEligible) EmeraldSuccess else CrimsonDanger
+                                            )
+                                            Text(
+                                                text = if (pred.isEligible) "GEMINI PRE-APPROVED" else "UNFAVORABLE / CAUTION",
+                                                color = if (pred.isEligible) EmeraldSuccess else CrimsonDanger,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                        Surface(color = Navy900, shape = RoundedCornerShape(6.dp)) {
+                                            Text(
+                                                text = "${pred.approvalProbabilityPercent}% Probability",
+                                                color = if (pred.approvalProbabilityPercent >= 75) EmeraldSuccess else WarningAmber,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Text(
+                                        text = pred.executiveSummary,
+                                        color = TextWhite,
+                                        fontSize = 12.sp,
+                                        lineHeight = 18.sp
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text("MAX BORROWING", color = TextMuted, fontSize = 10.sp)
+                                            Text("$${"%,.0f".format(Locale.US, pred.maxRecommendedLoanAmount)}", color = GoldAccent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                        }
+                                        Column {
+                                            Text("OFFERED APR", color = TextMuted, fontSize = 10.sp)
+                                            Text("${"%.2f".format(Locale.US, pred.recommendedApr)}%", color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                        }
+                                        Column {
+                                            Text("MAX EMI/MO", color = TextMuted, fontSize = 10.sp)
+                                            Text("$${"%,.0f".format(Locale.US, pred.maxMonthlyEmiCapacity)}", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Standard Algorithmic Eligibility Card
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth().testTag("loan_eligibility_card"),

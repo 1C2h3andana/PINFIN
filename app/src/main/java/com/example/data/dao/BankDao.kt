@@ -17,6 +17,7 @@ import com.example.data.model.NotificationEntity
 import com.example.data.model.SavingsGoalEntity
 import com.example.data.model.SecurityLogEntity
 import com.example.data.model.SupportTicketEntity
+import com.example.data.model.Transaction
 import com.example.data.model.TransactionCategory
 import com.example.data.model.TransactionEntity
 import com.example.data.model.TransactionStatus
@@ -89,6 +90,12 @@ interface BankDao {
     @Query("SELECT * FROM transactions WHERE status = 'FLAGGED_REVIEW' OR status = 'BLOCKED_FRAUD' ORDER BY timestamp DESC")
     fun getAmlReviewTransactions(): Flow<List<TransactionEntity>>
 
+    @Query("SELECT * FROM transactions WHERE timestamp >= :sinceTimestamp AND type = 'DEBIT' AND status != 'REVERTED' AND status != 'BLOCKED_FRAUD' ORDER BY timestamp ASC")
+    fun getSpendingTransactionsSince(sinceTimestamp: Long): Flow<List<TransactionEntity>>
+
+    @Query("SELECT * FROM transactions WHERE timestamp >= :sinceTimestamp ORDER BY timestamp ASC")
+    fun getTransactionsSince(sinceTimestamp: Long): Flow<List<TransactionEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: TransactionEntity): Long
 
@@ -100,6 +107,34 @@ interface BankDao {
 
     @Query("UPDATE transactions SET status = :newStatus WHERE id = :id")
     suspend fun updateTransactionStatus(id: Long, newStatus: TransactionStatus)
+
+    // --- Transaction Records (Offline-First Transaction History) ---
+    @Query("SELECT * FROM transaction_records ORDER BY date DESC")
+    fun getAllTransactionRecords(): Flow<List<Transaction>>
+
+    @Query("SELECT * FROM transaction_records WHERE id = :id LIMIT 1")
+    suspend fun getTransactionRecordById(id: Long): Transaction?
+
+    @Query("SELECT * FROM transaction_records WHERE type = :type ORDER BY date DESC")
+    fun getTransactionsByType(type: String): Flow<List<Transaction>>
+
+    @Query("SELECT * FROM transaction_records WHERE category = :category ORDER BY date DESC")
+    fun getTransactionsByCategoryName(category: String): Flow<List<Transaction>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransactionRecord(transaction: Transaction): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransactionRecords(transactions: List<Transaction>)
+
+    @Update
+    suspend fun updateTransactionRecord(transaction: Transaction)
+
+    @Query("DELETE FROM transaction_records WHERE id = :id")
+    suspend fun deleteTransactionRecordById(id: Long)
+
+    @Query("DELETE FROM transaction_records")
+    suspend fun deleteAllTransactionRecords()
 
     // --- Investments ---
     @Query("SELECT * FROM investments ORDER BY id ASC")

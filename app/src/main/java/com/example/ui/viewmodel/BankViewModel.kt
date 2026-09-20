@@ -11,6 +11,8 @@ import com.example.data.model.ApplicationType
 import com.example.data.model.AssetType
 import com.example.data.model.BillEntity
 import com.example.data.model.BudgetEntity
+import com.example.data.model.BudgetGoal
+import com.example.data.model.DailySpendingPoint
 import com.example.data.model.InsuranceClaimEntity
 import com.example.data.model.InsurancePolicyEntity
 import com.example.data.model.InsuranceType
@@ -20,26 +22,39 @@ import com.example.data.model.LoanEligibilityResult
 import com.example.data.model.NotificationEntity
 import com.example.data.model.NotificationType
 import com.example.data.model.PolicyStatus
+import com.example.data.model.RecurringTransactionEntity
 import com.example.data.model.RiskEvaluation
 import com.example.data.model.RiskLevel
 import com.example.data.model.SavingsGoalEntity
 import com.example.data.model.SecurityEventType
 import com.example.data.model.SecurityLogEntity
 import com.example.data.model.SupportTicketEntity
+import com.example.data.model.Transaction
 import com.example.data.model.TransactionCategory
 import com.example.data.model.TransactionEntity
 import com.example.data.model.UserEntity
 import com.example.data.model.UserRole
 import com.example.data.repository.BankRepository
+import com.example.data.repository.TransactionRepository
 import com.example.domain.ai.BankingAiAdvisor
+import com.example.domain.ai.GeminiLoanAdvisorService
+import com.example.domain.ai.GeminiLoanPrediction
 import com.example.domain.engine.FraudDetectionEngine
 import com.example.domain.loan.LoanCalculator
 import com.example.domain.security.AuthCrypto
+import com.example.service.BudgetAlertLevel
+import com.example.service.BudgetAlertResult
+import com.example.service.BudgetGoalMonitor
+import com.example.service.BudgetGoalMonitoringWorker
+import com.example.service.BudgetGoalMonitorService
+import com.example.service.RecurringTransactionManager
+import com.example.service.RecurringTransactionWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -87,13 +102,20 @@ data class DepositWithdrawState(
 class BankViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: BankRepository
+    val transactionRepository: TransactionRepository
 
     val users: StateFlow<List<UserEntity>>
     val accounts: StateFlow<List<AccountEntity>>
     val transactions: StateFlow<List<TransactionEntity>>
+    val spendingTrendsLast30Days: StateFlow<List<DailySpendingPoint>>
     val amlReviewTransactions: StateFlow<List<TransactionEntity>>
+    val transactionRecords: StateFlow<List<Transaction>>
+    val recurringTransactions: StateFlow<List<RecurringTransactionEntity>>
     val budgets: StateFlow<List<BudgetEntity>>
     val savingsGoals: StateFlow<List<SavingsGoalEntity>>
+    val budgetGoalsList: StateFlow<List<BudgetGoal>>
+    private val _budgetAlertResults = MutableStateFlow<List<BudgetAlertResult>>(emptyList())
+    val budgetAlertResults: StateFlow<List<BudgetAlertResult>> = _budgetAlertResults.asStateFlow()
     val bills: StateFlow<List<BillEntity>>
     val investments: StateFlow<List<InvestmentEntity>>
     val insurancePolicies: StateFlow<List<InsurancePolicyEntity>>
@@ -144,6 +166,13 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isBiometricsEnabled = MutableStateFlow(true)
     val isBiometricsEnabled: StateFlow<Boolean> = _isBiometricsEnabled.asStateFlow()
+
+    // Biometric App Launch & Screen Lock state
+    private val _isAppUnlocked = MutableStateFlow(false)
+    val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
+
+    private val _biometricSensitiveTarget = MutableStateFlow<String?>(null)
+    val biometricSensitiveTarget: StateFlow<String?> = _biometricSensitiveTarget.asStateFlow()
 
     private val _isLoginAlertsEnabled = MutableStateFlow(true)
     val isLoginAlertsEnabled: StateFlow<Boolean> = _isLoginAlertsEnabled.asStateFlow()
@@ -215,6 +244,44 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
         SharingStarted.Eagerly,
         LoanCalculator.evaluateEligibility(8500.0, 800.0, 785, "Salaried Full-Time", "Personal Loan")
     )
+
+    // Gemini-powered AI Loan Eligibility state
+    private val _geminiLoanPrediction = MutableStateFlow<GeminiLoanPrediction?>(null)
+    val geminiLoanPrediction: StateFlow<GeminiLoanPrediction?> = _geminiLoanPrediction.asStateFlow()
+
+    private val _isEvaluatingLoanWithGemini = MutableStateFlow(false)
+    val isEvaluatingLoanWithGemini: StateFlow<Boolean> = _isEvaluatingLoanWithGemini.asStateFlow()
+
+    fun evaluateLoanEligibilityWithGemini(
+        requestedAmount: Double = loanPrincipal.value,
+        loanTenureMonths: Int = _loanTenureMonths.value,
+        loanPurpose: String = selectedLoanType.value
+    ) {
+        viewModelScope.launch {
+            _isEvaluatingLoanWithGemini.value = true
+            try {
+                val accList = accounts.value
+                val txList = transactionRecords.value
+                val goalsList = budgetGoalsList.value
+                val prediction = GeminiLoanAdvisorService.predictLoanEligibility(
+                    requestedAmount = requestedAmount,
+                    loanTenureMonths = loanTenureMonths,
+                    loanPurpose = loanPurpose,
+                    creditScore = userCreditScore.value,
+                    statedMonthlyIncome = userMonthlyIncome.value,
+                    accounts = accList,
+                    transactions = txList,
+                    budgetGoals = goalsList
+                )
+                _geminiLoanPrediction.value = prediction
+                showMessage("Gemini AI loan analysis generated successfully!")
+            } catch (e: Exception) {
+                showMessage("AI loan evaluation error: ${e.localizedMessage}")
+            } finally {
+                _isEvaluatingLoanWithGemini.value = false
+            }
+        }
+    }
 
     private val _chatInput = MutableStateFlow("")
     val chatInput: StateFlow<String> = _chatInput.asStateFlow()
@@ -291,13 +358,22 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
     init {
         val db = BankDatabase.getDatabase(application)
         repository = BankRepository(db.bankDao())
+        transactionRepository = TransactionRepository(
+            transactionDao = db.transactionDao(),
+            budgetGoalDao = db.budgetGoalDao(),
+            recurringTransactionDao = db.recurringTransactionDao()
+        )
 
         users = repository.users.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         accounts = repository.accounts.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         transactions = repository.transactions.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        spendingTrendsLast30Days = repository.spendingTrendsLast30Days.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         amlReviewTransactions = repository.amlReviewTransactions.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        transactionRecords = transactionRepository.allTransactions.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        recurringTransactions = transactionRepository.allRecurringTransactions.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         budgets = repository.budgets.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         savingsGoals = repository.savingsGoals.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        budgetGoalsList = transactionRepository.allBudgetGoals.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         bills = repository.bills.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         investments = repository.investments.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
         insurancePolicies = repository.insurancePolicies.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -344,6 +420,40 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
                     jwtDisplay = initialUser.jwtToken
                 )
             }
+
+            // Ensure baseline budget goals exist in Room database
+            try {
+                val existingGoals = transactionRepository.allBudgetGoals.first()
+                if (existingGoals.isEmpty()) {
+                    val defaultGoals = listOf(
+                        BudgetGoal(category = "Food & Dining", targetAmount = 500.0, currentProgress = 425.0, deadline = "End of Month"),
+                        BudgetGoal(category = "Shopping & Retail", targetAmount = 800.0, currentProgress = 890.0, deadline = "End of Month"),
+                        BudgetGoal(category = "Entertainment", targetAmount = 300.0, currentProgress = 120.0, deadline = "End of Month"),
+                        BudgetGoal(category = "Bills & Utilities", targetAmount = 600.0, currentProgress = 490.0, deadline = "End of Month")
+                    )
+                    transactionRepository.insertBudgetGoals(defaultGoals)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("BankViewModel", "Error seeding budget goals", e)
+            }
+
+            // Schedule periodic WorkManager background monitoring for budget goals
+            try {
+                BudgetGoalMonitoringWorker.schedulePeriodic(application)
+            } catch (e: Exception) {
+                android.util.Log.e("BankViewModel", "Failed to schedule BudgetGoal periodic worker", e)
+            }
+
+            // Seed recurring subscriptions & schedule periodic WorkManager background job
+            try {
+                RecurringTransactionManager.seedDefaultRecurringIfEmpty(application)
+                RecurringTransactionWorker.schedulePeriodic(application, intervalHours = 12)
+            } catch (e: Exception) {
+                android.util.Log.e("BankViewModel", "Failed to initialize recurring WorkManager", e)
+            }
+
+            // Perform initial evaluation
+            checkBudgetGoals(forceNotify = false)
         }
     }
 
@@ -959,6 +1069,25 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
         showMessage("Biometric Passkey: ${if (_isBiometricsEnabled.value) "ENABLED" else "DISABLED"}")
     }
 
+    fun unlockAppWithBiometrics() {
+        _isAppUnlocked.value = true
+        _biometricSensitiveTarget.value = null
+        showMessage("✓ Biometric authentication successful. Identity verified.")
+    }
+
+    fun lockAppBiometric() {
+        _isAppUnlocked.value = false
+        showMessage("App locked with Biometric Protection.")
+    }
+
+    fun promptBiometricForSensitiveAction(targetDescription: String) {
+        _biometricSensitiveTarget.value = targetDescription
+    }
+
+    fun dismissSensitiveBiometricPrompt() {
+        _biometricSensitiveTarget.value = null
+    }
+
     fun toggleLoginAlerts() {
         _isLoginAlertsEnabled.value = !_isLoginAlertsEnabled.value
         showMessage("Suspicious Login Alerts: ${if (_isLoginAlertsEnabled.value) "ENABLED" else "DISABLED"}")
@@ -1048,6 +1177,199 @@ class BankViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearSnackbar() {
         _snackbarMessage.value = null
+    }
+
+    // --- Transaction & Budget Goal Local Operations ---
+    fun insertTransactionRecord(amount: Double, category: String, type: String = "expense", date: Long = System.currentTimeMillis()) {
+        viewModelScope.launch {
+            val newId = transactionRepository.insertTransaction(
+                Transaction(amount = amount, category = category, date = date, type = type)
+            )
+            showMessage("Transaction #$newId saved to local SQLite database.")
+        }
+    }
+
+    fun deleteTransactionRecord(id: Long) {
+        viewModelScope.launch {
+            transactionRepository.deleteTransactionById(id)
+            showMessage("Transaction #$id removed from local database.")
+        }
+    }
+
+    fun addBudgetGoal(category: String, targetAmount: Double, deadline: String = "Dec 2026", currentProgress: Double = 0.0) {
+        viewModelScope.launch {
+            val id = transactionRepository.insertBudgetGoal(
+                BudgetGoal(category = category, targetAmount = targetAmount, deadline = deadline, currentProgress = currentProgress)
+            )
+            showMessage("Budget goal #$id for '$category' registered.")
+        }
+    }
+
+    fun updateBudgetGoalProgress(id: Long, addedAmount: Double) {
+        viewModelScope.launch {
+            transactionRepository.addBudgetProgress(id, addedAmount)
+            showMessage("Progress updated by $$addedAmount.")
+        }
+    }
+
+    fun deleteBudgetGoal(id: Long) {
+        viewModelScope.launch {
+            transactionRepository.deleteBudgetGoalById(id)
+            showMessage("Budget goal #$id deleted.")
+        }
+    }
+
+    /**
+     * Checks local Room BudgetGoal progress against transactions and updates alerts.
+     */
+    fun checkBudgetGoals(forceNotify: Boolean = true) {
+        viewModelScope.launch {
+            try {
+                val results = BudgetGoalMonitor.checkBudgetGoalsAndNotify(getApplication(), forceNotify = forceNotify)
+                _budgetAlertResults.value = results
+                val alertsCount = results.count { it.level != BudgetAlertLevel.NORMAL }
+                if (alertsCount > 0) {
+                    showMessage("Budget Sentinel: $alertsCount target alerts identified.")
+                } else {
+                    showMessage("All budget targets are currently on track.")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("BankViewModel", "Error evaluating budget goals", e)
+            }
+        }
+    }
+
+    /**
+     * Triggers the WorkManager [BudgetGoalMonitoringWorker] for immediate execution.
+     */
+    fun triggerBudgetWorkerNow() {
+        try {
+            BudgetGoalMonitoringWorker.runOnce(getApplication())
+            showMessage("WorkManager: Budget monitoring worker scheduled.")
+            checkBudgetGoals(forceNotify = true)
+        } catch (e: Exception) {
+            android.util.Log.e("BankViewModel", "Failed to enqueue WorkManager worker", e)
+        }
+    }
+
+    /**
+     * Triggers the Android Background [BudgetGoalMonitorService] for immediate execution.
+     */
+    fun triggerBudgetServiceNow() {
+        try {
+            BudgetGoalMonitorService.startCheck(getApplication(), forceNotify = true)
+            showMessage("Android Service: Budget monitor service triggered.")
+            checkBudgetGoals(forceNotify = true)
+        } catch (e: Exception) {
+            android.util.Log.e("BankViewModel", "Failed to start service", e)
+        }
+    }
+
+    /**
+     * Adds an expense to a budget goal to simulate and test approaching or exceeding thresholds.
+     */
+    fun recordExpenseForBudgetGoal(goalId: Long, category: String, amount: Double) {
+        viewModelScope.launch {
+            transactionRepository.addBudgetProgress(goalId, amount)
+            insertTransactionRecord(amount = amount, category = category, type = "expense")
+            showMessage("Recorded $$amount expense for '$category'.")
+            checkBudgetGoals(forceNotify = true)
+        }
+    }
+
+    // =========================================================================
+    // Recurring Subscriptions & WorkManager Automated Execution Actions
+    // =========================================================================
+
+    /**
+     * Enqueues an immediate WorkManager job to evaluate and insert due recurring transactions.
+     * If [forceAll] is true, executes all active subscriptions immediately.
+     */
+    fun triggerRecurringWorkManagerNow(forceAll: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                RecurringTransactionWorker.runOnce(getApplication(), forceAll = forceAll)
+                // Also trigger directly through the manager for immediate reactive UI update
+                val summary = RecurringTransactionManager.processDueRecurringTransactions(
+                    context = getApplication(),
+                    forceAll = forceAll
+                )
+                if (summary.processedCount > 0) {
+                    showMessage("⚡ WorkManager auto-debited ${summary.processedCount} subscriptions ($${"%,.2f".format(summary.totalAmount)}).")
+                } else {
+                    showMessage("⚡ WorkManager executed: No subscriptions currently due.")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("BankViewModel", "Failed to trigger recurring WorkManager", e)
+                showMessage("WorkManager trigger error: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Adds a new scheduled recurring subscription or biller to the Room database.
+     */
+    fun addRecurringSubscription(
+        title: String,
+        payee: String,
+        amount: Double,
+        category: String,
+        frequency: String,
+        intervalDays: Int = 30
+    ) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val intervalMs = intervalDays.toLong() * 24L * 60 * 60 * 1000L
+            val entity = RecurringTransactionEntity(
+                title = title.trim(),
+                payee = payee.trim(),
+                amount = amount,
+                category = category.trim(),
+                frequency = frequency.trim().uppercase(),
+                intervalMillis = intervalMs,
+                nextDueTimestamp = now + intervalMs,
+                accountId = 1L,
+                accountName = "Premier Checking (...4829)",
+                isActive = true,
+                note = "User scheduled recurring payment"
+            )
+            transactionRepository.insertRecurringTransaction(entity)
+            showMessage("✓ Scheduled recurring payment for '$title' ($$amount) added to Room.")
+        }
+    }
+
+    /**
+     * Toggles whether automatic execution is active or paused for a recurring subscription.
+     */
+    fun toggleRecurringSubscriptionActive(id: Long, isActive: Boolean) {
+        viewModelScope.launch {
+            transactionRepository.setRecurringTransactionActive(id, isActive)
+            showMessage(if (isActive) "✓ Subscription auto-debit resumed." else "⏸ Subscription auto-debit paused.")
+        }
+    }
+
+    /**
+     * Deletes a recurring subscription schedule from Room.
+     */
+    fun deleteRecurringSubscription(id: Long) {
+        viewModelScope.launch {
+            transactionRepository.deleteRecurringTransactionById(id)
+            showMessage("Deleted recurring subscription schedule.")
+        }
+    }
+
+    /**
+     * Executes a specific recurring subscription immediately on demand.
+     */
+    fun executeSingleRecurringSubscriptionNow(id: Long) {
+        viewModelScope.launch {
+            val success = RecurringTransactionManager.executeSingleRecurringTransaction(getApplication(), id)
+            if (success) {
+                showMessage("✓ Subscription payment executed and inserted into Room database.")
+            } else {
+                showMessage("Failed to execute subscription payment.")
+            }
+        }
     }
 }
 

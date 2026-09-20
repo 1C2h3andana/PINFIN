@@ -888,56 +888,237 @@ fun InternationalTransferScreen(viewModel: BankViewModel, modifier: Modifier = M
 }
 
 // -------------------------------------------------------------------------
-// 7. SCHEDULED PAYMENTS SCREEN
+// 7. SCHEDULED PAYMENTS SCREEN (WorkManager & Room Subscriptions)
 // -------------------------------------------------------------------------
 @Composable
 fun ScheduledPaymentsScreen(viewModel: BankViewModel, modifier: Modifier = Modifier) {
-    var payeeName by remember { mutableStateOf("AWS Quantum Cloud Infrastructure") }
-    var scheduledAmount by remember { mutableStateOf("850.00") }
-    var recurrenceFrequency by remember { mutableStateOf("Monthly on 1st") }
-    var executionDate by remember { mutableStateOf("2026-09-01") }
-    var isScheduled by remember { mutableStateOf(false) }
+    val recurringList by viewModel.recurringTransactions.collectAsStateWithLifecycle()
 
-    val activeSchedules = listOf(
-        Triple("Metropolitan Mortgage & Land Trust", "$3,200.00 / mo", GoldAccent),
-        Triple("Quantum Cloud AI Compute Services", "$850.00 / mo", CyberCyan),
-        Triple("Health & Sovereign Umbrella Insurance", "$420.00 / mo", EmeraldSuccess)
-    )
+    var subscriptionTitle by remember { mutableStateOf("") }
+    var payeeName by remember { mutableStateOf("") }
+    var scheduledAmount by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("Entertainment") }
+    var recurrenceFrequency by remember { mutableStateOf("MONTHLY") }
+    var isScheduledSuccess by remember { mutableStateOf(false) }
+
+    val categories = listOf("Entertainment", "Utilities", "Cloud & Dev", "Health & Fitness", "Housing", "General")
+    val frequencies = listOf("MONTHLY", "WEEKLY", "DAILY")
 
     LazyColumn(modifier = modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             BankingSectionHeader(
-                title = "Scheduled & Recurring Payments",
-                subtitle = "Automated recurring wire executions, utility billers, and calendar-linked payment schedules.",
+                title = "Scheduled & Recurring Subscriptions",
+                subtitle = "Automated WorkManager engine evaluates & inserts periodic subscription transactions directly into the Room database.",
                 icon = Icons.Default.Schedule,
                 color = GoldAccent
             )
         }
 
-        // Active Scheduled Payments
+        // WorkManager Engine Control Panel
         item {
-            Text("ACTIVE SCHEDULED PAYMENT FLOWS", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                activeSchedules.forEach { (payee, amount, color) ->
-                    Surface(
-                        color = NavyCard,
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Navy700),
-                        modifier = Modifier.fillMaxWidth()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Navy900),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, GoldAccent.copy(alpha = 0.4f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(GoldAccent.copy(alpha = 0.18f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Schedule, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(18.dp))
+                            }
+                            Column {
+                                Text("WorkManager Background Engine", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Periodic CoroutineWorker: Active (Every 12h)", color = EmeraldSuccess, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            PulsingStatusBadge(pulseColor = EmeraldSuccess, badgeSize = 7.dp)
+                            Text("SCHEDULED", color = EmeraldSuccess, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Text(
+                        "WorkManager automatically detects due subscriptions, inserts debit transactions into Room, debits accounts, logs in-app alerts, and fires status bar notifications.",
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { viewModel.triggerRecurringWorkManagerNow(forceAll = false) },
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Navy700),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
+                                Text("Check Due Now", color = TextWhite, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Button(
+                            onClick = { viewModel.triggerRecurringWorkManagerNow(forceAll = true) },
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Navy900, modifier = Modifier.size(16.dp))
+                                Text("Run All Subscriptions", color = Navy900, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Active Room Subscriptions Header
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("ACTIVE SUBSCRIPTIONS IN ROOM (${recurringList.size})", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("Auto-Deducts Checking ...4829", color = TextMuted, fontSize = 10.sp)
+            }
+        }
+
+        // Active Subscriptions List from Room
+        if (recurringList.isEmpty()) {
+            item {
+                Surface(
+                    color = NavyCard,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Navy700),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.padding(24.dp), contentAlignment = Alignment.Center) {
+                        Text("No recurring subscriptions recorded. Add one below to automate debiting.", color = TextMuted, fontSize = 12.sp)
+                    }
+                }
+            }
+        } else {
+            items(recurringList) { recurring ->
+                val isDueNow = recurring.nextDueTimestamp <= System.currentTimeMillis()
+                val statusColor = if (isDueNow) CrimsonDanger else if (recurring.isActive) EmeraldSuccess else TextMuted
+
+                Surface(
+                    color = NavyCard,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isDueNow) CrimsonDanger.copy(alpha = 0.5f) else Navy700),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Box(modifier = Modifier.size(34.dp).clip(CircleShape).background(color.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(statusColor.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = statusColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
+
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(payee, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                Text("Next Run: Sep 1, 2026 • Auto-Debit Vault", color = TextMuted, fontSize = 9.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(recurring.title, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    if (isDueNow && recurring.isActive) {
+                                        Surface(color = CrimsonDanger.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
+                                            Text("DUE NOW", color = CrimsonDanger, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                }
+                                Text(
+                                    "Payee: ${recurring.payee} • ${recurring.category} • ${recurring.frequency}",
+                                    color = TextMuted,
+                                    fontSize = 10.sp
+                                )
                             }
-                            Text(amount, color = color, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    "$${"%,.2f".format(recurring.amount)}",
+                                    color = if (recurring.isActive) GoldAccent else TextMuted,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(recurring.frequency.lowercase(), color = TextMuted, fontSize = 9.sp)
+                            }
+                        }
+
+                        // Execution Metadata & Controls
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    if (isDueNow) "WorkManager will auto-insert into Room" else "Next due timestamp logged in Room",
+                                    color = if (isDueNow) AmberOrange else TextMuted,
+                                    fontSize = 9.sp
+                                )
+                                if (recurring.executionCount > 0) {
+                                    Text("Executed ${recurring.executionCount} time(s)", color = CyberCyan, fontSize = 9.sp)
+                                }
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(
+                                    onClick = { viewModel.executeSingleRecurringSubscriptionNow(recurring.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy700),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text("Debit Now", color = CyberCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Switch(
+                                    checked = recurring.isActive,
+                                    onCheckedChange = { viewModel.toggleRecurringSubscriptionActive(recurring.id, it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = EmeraldSuccess,
+                                        checkedTrackColor = EmeraldSuccess.copy(alpha = 0.3f),
+                                        uncheckedThumbColor = TextMuted,
+                                        uncheckedTrackColor = Navy900
+                                    ),
+                                    modifier = Modifier.size(34.dp)
+                                )
+
+                                IconButton(
+                                    onClick = { viewModel.deleteRecurringSubscription(recurring.id) },
+                                    modifier = Modifier.size(30.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = CrimsonDanger, modifier = Modifier.size(16.dp))
+                                }
+                            }
                         }
                     }
                 }
@@ -953,12 +1134,22 @@ fun ScheduledPaymentsScreen(viewModel: BankViewModel, modifier: Modifier = Modif
                 border = androidx.compose.foundation.BorderStroke(1.dp, Navy700)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("CREATE NEW SCHEDULED RECURRING PAYMENT", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("SCHEDULE NEW RECURRING SUBSCRIPTION IN ROOM", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+
+                    OutlinedTextField(
+                        value = subscriptionTitle,
+                        onValueChange = { subscriptionTitle = it },
+                        label = { Text("Subscription Title (e.g. Netflix, Gym, AWS)", fontSize = 11.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = bankingTextFieldColors(GoldAccent),
+                        shape = RoundedCornerShape(10.dp)
+                    )
 
                     OutlinedTextField(
                         value = payeeName,
                         onValueChange = { payeeName = it },
-                        label = { Text("Biller / Payee Name", fontSize = 11.sp) },
+                        label = { Text("Biller / Payee Name (e.g. Netflix Inc.)", fontSize = 11.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = bankingTextFieldColors(GoldAccent),
@@ -987,22 +1178,58 @@ fun ScheduledPaymentsScreen(viewModel: BankViewModel, modifier: Modifier = Modif
                         )
                     }
 
-                    if (isScheduled) {
+                    // Category chips
+                    Text("Category", color = TextMuted, fontSize = 11.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(categories) { cat ->
+                            Surface(
+                                color = if (selectedCategory == cat) GoldAccent else NavyCard,
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedCategory == cat) GoldAccent else Navy700),
+                                modifier = Modifier.clickable { selectedCategory = cat }
+                            ) {
+                                Text(
+                                    cat,
+                                    color = if (selectedCategory == cat) Navy900 else TextWhite,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (selectedCategory == cat) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (isScheduledSuccess) {
                         Surface(color = EmeraldSuccess.copy(alpha = 0.2f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldSuccess, modifier = Modifier.size(18.dp))
-                                Text("Recurring payment to '$payeeName' scheduled successfully!", color = EmeraldSuccess, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("Subscription saved to Room! WorkManager will periodically auto-debit.", color = EmeraldSuccess, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
 
                     Button(
-                        onClick = { isScheduled = true },
+                        onClick = {
+                            val amount = scheduledAmount.toDoubleOrNull() ?: 19.99
+                            val title = if (subscriptionTitle.isNotBlank()) subscriptionTitle else "Custom Subscription"
+                            val payee = if (payeeName.isNotBlank()) payeeName else title
+                            viewModel.addRecurringSubscription(
+                                title = title,
+                                payee = payee,
+                                amount = amount,
+                                category = selectedCategory,
+                                frequency = recurrenceFrequency
+                            )
+                            isScheduledSuccess = true
+                            subscriptionTitle = ""
+                            payeeName = ""
+                            scheduledAmount = ""
+                        },
                         modifier = Modifier.fillMaxWidth().height(46.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Lock & Schedule Recurring Payment", color = Navy900, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                        Text("Save & Schedule Subscription in Room", color = Navy900, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                     }
                 }
             }

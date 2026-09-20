@@ -359,18 +359,7 @@ fun InvestCryptoScreen(viewModel: BankViewModel) {
 }
 
 @Composable fun LoanEligibilityScreen(viewModel: BankViewModel) {
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = Navy800), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Pre-Approved Instant Credit Power", color = EmeraldSuccess, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    DetailItemRow("Pre-Approved Mortgage Cap", "Up to $850,000 (3.9% APR)", EmeraldSuccess)
-                    DetailItemRow("Unsecured Business Line", "Up to $100,000 (0% 12mo)", CyberCyan)
-                }
-            }
-        }
-    }
+    GeminiLoanEligibilityScreen(viewModel = viewModel)
 }
 
 @Composable fun LoanEmiCalcScreen(viewModel: BankViewModel) {
