@@ -84,6 +84,7 @@ import com.example.ui.components.PulsingStatusBadge
 import com.example.ui.components.SecurityClearanceLevel
 import com.example.ui.components.SecurityContextProvider
 import com.example.ui.components.StatementExportDialog
+import com.example.ui.components.QuickActionFabMenu
 import com.example.ui.screens.AboutPfinScreen
 import com.example.ui.screens.AdminPanelScreen
 import com.example.ui.screens.AiAdvisorScreen
@@ -95,6 +96,7 @@ import com.example.ui.screens.AuthPageType
 import com.example.ui.screens.AuthSecurityHubScreen
 import com.example.ui.screens.BillsScreen
 import com.example.ui.screens.BiometricLoginScreen
+import com.example.ui.screens.BiometricAuthenticationScreen
 import com.example.ui.screens.BlogInsightsScreen
 import com.example.ui.screens.CareersScreen
 import com.example.ui.screens.ContactUsScreen
@@ -452,6 +454,11 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize notification channel and schedule periodic WorkManager background monitoring for suspicious transactions
+        com.example.service.SuspiciousTransactionMonitoringWorker.createNotificationChannel(this)
+        com.example.service.SuspiciousTransactionMonitoringWorker.schedulePeriodic(this)
+
         setContent {
             val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
             val isBiometricsEnabled by viewModel.isBiometricsEnabled.collectAsStateWithLifecycle()
@@ -460,7 +467,12 @@ class MainActivity : FragmentActivity() {
             MyApplicationTheme(darkTheme = isDarkMode) {
                 SecurityContextProvider(viewModel = viewModel) {
                     if (isBiometricsEnabled && !isAppUnlocked) {
-                        BiometricAppLockOverlay(viewModel = viewModel)
+                        BiometricAuthenticationScreen(
+                            viewModel = viewModel,
+                            onAuthSuccess = {
+                                viewModel.unlockAppWithBiometrics("Android Biometric Hardware (BiometricPrompt)")
+                            }
+                        )
                     } else {
                         MainAppScaffold(viewModel = viewModel)
                     }
@@ -524,7 +536,7 @@ fun MainAppScaffold(viewModel: BankViewModel) {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = Navy900,
+                drawerContainerColor = if (isDarkMode) Navy900 else MaterialTheme.colorScheme.surface,
                 modifier = Modifier.width(320.dp)
             ) {
                 NavigationSidebarContent(
@@ -534,14 +546,16 @@ fun MainAppScaffold(viewModel: BankViewModel) {
                     onOpenAuth = {
                         coroutineScope.launch { drawerState.close() }
                         isAuthDialogOpen = true
-                    }
+                    },
+                    isDarkMode = isDarkMode,
+                    onToggleTheme = { viewModel.toggleDarkMode() }
                 )
             }
         }
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = Navy900,
+            containerColor = if (isDarkMode) Navy900 else MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 TopAppBar(
@@ -646,6 +660,18 @@ fun MainAppScaffold(viewModel: BankViewModel) {
                             Icon(imageVector = Icons.Default.RocketLaunch, contentDescription = "Financial OS 2077", tint = if (currentRoute == Screen.FutureOs.route) GoldAccent else TextMuted)
                         }
 
+                        // Biometric Lock Financial Vault Action
+                        IconButton(
+                            onClick = { viewModel.lockAppBiometric() },
+                            modifier = Modifier.testTag("nav_top_lock_vault_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Lock Financial Vault with Biometrics",
+                                tint = CyberCyan
+                            )
+                        }
+
                         // Dark mode toggle
                         IconButton(
                             onClick = { viewModel.toggleDarkMode() },
@@ -699,6 +725,25 @@ fun MainAppScaffold(viewModel: BankViewModel) {
                             modifier = Modifier.testTag("nav_tab_${screen.route}")
                         )
                     }
+                }
+            },
+            floatingActionButton = {
+                val fabScreens = listOf(
+                    Screen.Home.route,
+                    Screen.Transfer.route,
+                    Screen.Analytics.route,
+                    Screen.Security.route,
+                    Screen.Loans.route,
+                    Screen.Investments.route
+                )
+                if (currentRoute in fabScreens) {
+                    QuickActionFabMenu(
+                        onAddTransaction = { viewModel.openDepositDialog() },
+                        onCheckEligibility = { navigateTo(Screen.Loans.route) },
+                        onViewAlerts = { isNotificationsDialogOpen = true },
+                        onExportCsv = { isStatementDialogOpen = true },
+                        onLockVault = { viewModel.lockAppBiometric() }
+                    )
                 }
             }
         ) { innerPadding ->
@@ -936,9 +981,15 @@ fun MainAppScaffold(viewModel: BankViewModel) {
                     )
                 }
                 composable(Screen.AuthBiometric.route) {
-                    BiometricLoginScreen(
+                    BiometricAuthenticationScreen(
                         viewModel = viewModel,
-                        onFallbackToPassword = { navController.navigate(Screen.AuthLogin.route) }
+                        onAuthSuccess = {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.AuthBiometric.route) { inclusive = true }
+                            }
+                        },
+                        onFallbackToPassword = { navController.navigate(Screen.AuthLogin.route) },
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
                 composable(Screen.AuthFaceScan.route) {

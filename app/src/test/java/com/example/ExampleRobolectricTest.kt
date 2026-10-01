@@ -356,12 +356,14 @@ class ExampleRobolectricTest {
         // 1. Seed account
         val account = AccountEntity(
             id = 1,
-            userId = 1,
+            name = "Premier Checking",
             accountNumber = "CH-4829",
-            type = AccountType.CHECKING,
+            routingNumber = "12200049",
             balance = 5000.0,
-            currency = "USD",
-            name = "Premier Checking"
+            type = AccountType.CHECKING,
+            cardNumber = "4532 8921 4482 1092",
+            expiry = "08/29",
+            cvv = "842"
         )
         dao.insertAccounts(listOf(account))
 
@@ -395,7 +397,6 @@ class ExampleRobolectricTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val result = com.example.service.RecurringTransactionManager.processDueTransactionsWithDaos(
             bankDao = dao,
-            transactionDao = transactionDao,
             budgetGoalDao = budgetGoalDao,
             recurringDao = recurringTransactionDao,
             context = context,
@@ -406,21 +407,186 @@ class ExampleRobolectricTest {
         assertEquals(16.99, result.totalAmount, 0.01)
 
         // 5. Verify transaction was inserted into Room
-        val insertedTransactions = transactionDao.getAllTransactions().first()
-        assertTrue(insertedTransactions.any { it.description.contains("Spotify Family") && it.amount == 16.99 })
+        val insertedTransactions = dao.getAllTransactions().first()
+        assertTrue(insertedTransactions.any { it.title.contains("Spotify Family") && it.amount == 16.99 })
 
         // 6. Verify account balance was debited
         val updatedAccount = dao.getAccountById(1)
         assertEquals(5000.0 - 16.99, updatedAccount?.balance ?: 0.0, 0.01)
 
         // 7. Verify budget goal progress was incremented
-        val updatedGoal = budgetGoalDao.getGoalById(1)
+        val updatedGoal = budgetGoalDao.getBudgetGoalById(1)
         assertEquals(20.0 + 16.99, updatedGoal?.currentProgress ?: 0.0, 0.01)
 
         // 8. Verify recurring subscription next due date was advanced
         val updatedSub = recurringTransactionDao.getRecurringTransactionById(10)
         assertTrue((updatedSub?.nextDueTimestamp ?: 0) > now)
         assertEquals(1, updatedSub?.executionCount)
+    }
+
+    @Test
+    fun testBiometricStatusAndCapability() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val capability = com.example.security.BiometricAuthManager.getDeviceCapability(context)
+        assertNotNull(capability)
+        assertNotNull(capability.status)
+        assertNotNull(capability.statusSummary)
+    }
+
+    @Test
+    fun testLoanEligibilityViewModel_inputUpdatesAndLiveMetrics() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.ui.viewmodel.LoanEligibilityViewModel(app)
+
+        viewModel.setMonthlyIncome(10000.0)
+        viewModel.setExistingMonthlyDebt(1000.0)
+        viewModel.setRequestedAmount(40000.0)
+        viewModel.setTenureMonths(36)
+        viewModel.setCreditScore(760)
+
+        val state = viewModel.uiState.value
+        assertEquals(10000.0, state.monthlyIncome, 0.01)
+        assertEquals(1000.0, state.existingMonthlyDebt, 0.01)
+        assertEquals(40000.0, state.requestedAmount, 0.01)
+        assertEquals(36, state.tenureMonths)
+        assertEquals(760, state.creditScore)
+
+        // Verify Live Current DTI: (1000 / 10000) * 100 = 10.0%
+        assertEquals(10.0, state.liveCurrentDti, 0.1)
+        assertTrue("Live EMI should be positive", state.liveEstimatedEmi > 0.0)
+        assertTrue("Projected DTI should be greater than current DTI", state.liveProjectedDti > state.liveCurrentDti)
+    }
+
+    @Test
+    fun testLoanEligibilityViewModel_applyPresets() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.ui.viewmodel.LoanEligibilityViewModel(app)
+
+        val primePreset = com.example.domain.ai.FinancialProfilePreset.ALL.first { it.id == "prime_tech" }
+        viewModel.applyPreset(primePreset)
+
+        val state = viewModel.uiState.value
+        assertEquals(primePreset.profile.monthlyIncome, state.monthlyIncome, 0.01)
+        assertEquals(primePreset.profile.creditScore, state.creditScore)
+        assertEquals(primePreset.profile.requestedAmount, state.requestedAmount, 0.01)
+        assertEquals("prime_tech", state.selectedPresetId)
+    }
+
+    @Test
+    fun testPersonalizedLoanEligibilityService_deterministicFallback() {
+        val input = com.example.domain.ai.FinancialInputProfile(
+            monthlyIncome = 8500.0,
+            employmentStatus = "Full-Time Employed",
+            creditScore = 750,
+            existingMonthlyDebt = 600.0,
+            requestedAmount = 30000.0,
+            tenureMonths = 36,
+            loanPurpose = "Home Improvement",
+            liquidSavings = 20000.0,
+            collateralType = "Unsecured"
+        )
+
+        val prediction = com.example.domain.ai.PersonalizedLoanEligibilityService.computeDeterministicUnderwriting(
+            input = input,
+            currentDti = (600.0 / 8500.0) * 100.0
+        )
+
+        assertTrue(prediction.isEligible)
+        assertEquals("PRE_APPROVED", prediction.decisionTier)
+        assertTrue(prediction.approvalProbabilityPercent >= 80)
+        assertTrue(prediction.recommendedApr in 4.0..10.0)
+        assertTrue(prediction.estimatedMonthlyPayment > 0.0)
+        assertTrue(prediction.keyStrengths.isNotEmpty())
+        assertTrue(prediction.actionableRecommendations.isNotEmpty())
+        assertNotNull(prediction.executiveSummary)
+    }
+
+    @Test
+    fun testDashboardTransactionFilteringAndBalanceConsolidation() = runBlocking {
+        val checking = AccountEntity(
+            id = 10,
+            name = "Smart Checking",
+            accountNumber = "9988112233",
+            routingNumber = "021000021",
+            balance = 12500.0,
+            type = AccountType.CHECKING,
+            cardNumber = "4532 9911 0022 3344",
+            expiry = "10/28",
+            cvv = "123"
+        )
+        val savings = AccountEntity(
+            id = 20,
+            name = "High Yield Vault",
+            accountNumber = "9988112244",
+            routingNumber = "021000021",
+            balance = 35000.0,
+            type = AccountType.SAVINGS,
+            cardNumber = "4532 9911 0022 5566",
+            expiry = "11/28",
+            cvv = "456"
+        )
+        dao.insertAccounts(listOf(checking, savings))
+
+        val retrievedAccounts = dao.getAllAccounts().first()
+        assertEquals(2, retrievedAccounts.size)
+        val consolidatedNetWorth = retrievedAccounts.sumOf { it.balance }
+        assertEquals(47500.0, consolidatedNetWorth, 0.01)
+
+        val now = System.currentTimeMillis()
+        val tx1 = com.example.data.model.TransactionEntity(
+            id = 201,
+            accountId = 10,
+            title = "Organic Whole Foods",
+            recipient = "Whole Foods Market",
+            amount = 145.20,
+            category = com.example.data.model.TransactionCategory.FOOD,
+            type = com.example.data.model.TransactionType.DEBIT,
+            timestamp = now,
+            status = com.example.data.model.TransactionStatus.COMPLETED
+        )
+        val tx2 = com.example.data.model.TransactionEntity(
+            id = 202,
+            accountId = 10,
+            title = "Consulting Retainer",
+            recipient = "Acme Corp",
+            amount = 6500.00,
+            category = com.example.data.model.TransactionCategory.SALARY,
+            type = com.example.data.model.TransactionType.CREDIT,
+            timestamp = now,
+            status = com.example.data.model.TransactionStatus.COMPLETED
+        )
+        val tx3 = com.example.data.model.TransactionEntity(
+            id = 203,
+            accountId = 20,
+            title = "High Risk Crypto Transfer",
+            recipient = "Unknown Darknet Merchant",
+            amount = 8900.00,
+            category = com.example.data.model.TransactionCategory.TRANSFER,
+            type = com.example.data.model.TransactionType.DEBIT,
+            timestamp = now,
+            status = com.example.data.model.TransactionStatus.BLOCKED_FRAUD,
+            riskScore = 95
+        )
+
+        dao.insertTransactions(listOf(tx1, tx2, tx3))
+        val allTx = dao.getAllTransactions().first()
+        assertEquals(3, allTx.size)
+
+        val searchResults = allTx.filter { it.title.contains("Organic", ignoreCase = true) }
+        assertEquals(1, searchResults.size)
+        assertEquals(201L, searchResults.first().id)
+
+        val expenses = allTx.filter { it.type == com.example.data.model.TransactionType.DEBIT }
+        assertEquals(2, expenses.size)
+
+        val income = allTx.filter { it.type == com.example.data.model.TransactionType.CREDIT }
+        assertEquals(1, income.size)
+        assertEquals(6500.00, income.first().amount, 0.01)
+
+        val flagged = allTx.filter { it.status == com.example.data.model.TransactionStatus.BLOCKED_FRAUD || it.riskScore >= 50 }
+        assertEquals(1, flagged.size)
+        assertEquals(203L, flagged.first().id)
+        assertEquals(95, flagged.first().riskScore)
     }
 }
 

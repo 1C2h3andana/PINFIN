@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -359,7 +360,44 @@ fun InvestCryptoScreen(viewModel: BankViewModel) {
 }
 
 @Composable fun LoanEligibilityScreen(viewModel: BankViewModel) {
-    GeminiLoanEligibilityScreen(viewModel = viewModel)
+    var selectedSubTab by remember { mutableIntStateOf(0) }
+    val subTabs = listOf("Personalized AI Prediction", "Room Database Underwriter")
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(
+            selectedTabIndex = selectedSubTab,
+            containerColor = NavyCard,
+            contentColor = CyberCyan,
+            indicator = { tabPositions ->
+                TabRowDefaults.Indicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedSubTab]),
+                    color = CyberCyan,
+                    height = 3.dp
+                )
+            }
+        ) {
+            subTabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = selectedSubTab == index,
+                    onClick = { selectedSubTab = index },
+                    text = {
+                        Text(
+                            text = title,
+                            fontSize = 12.sp,
+                            fontWeight = if (selectedSubTab == index) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedSubTab == index) CyberCyan else TextMuted
+                        )
+                    }
+                )
+            }
+        }
+
+        if (selectedSubTab == 0) {
+            LoanEligibilityPredictionScreen()
+        } else {
+            GeminiLoanEligibilityScreen(viewModel = viewModel)
+        }
+    }
 }
 
 @Composable fun LoanEmiCalcScreen(viewModel: BankViewModel) {

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CrisisAlert
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Explore
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Park
 import androidx.compose.material.icons.filled.Policy
@@ -59,11 +61,14 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -110,7 +115,9 @@ fun NavigationSidebarContent(
     authState: AuthUiState,
     onNavigate: (String) -> Unit,
     onOpenAuth: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isDarkMode: Boolean = true,
+    onToggleTheme: (() -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -630,6 +637,64 @@ fun NavigationSidebarContent(
                 }
 
                 Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(16.dp))
+            }
+        }
+
+        // --- Theme Toggle Controller ---
+        onToggleTheme?.let { toggle ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { toggle() }
+                    .testTag("sidebar_theme_toggle"),
+                color = if (isDarkMode) Navy800 else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (isDarkMode) Navy700 else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = null,
+                            tint = if (isDarkMode) AmberOrange else CyberCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Column {
+                            Text(
+                                text = if (isDarkMode) "Dark Theme Active" else "Light Theme Active",
+                                color = if (isDarkMode) TextWhite else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Tap or toggle to switch",
+                                color = if (isDarkMode) TextMuted else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = isDarkMode,
+                        onCheckedChange = { toggle() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = CyberCyan,
+                            checkedTrackColor = Navy900,
+                            uncheckedThumbColor = AmberOrange,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.testTag("sidebar_theme_switch")
+                    )
+                }
             }
         }
 

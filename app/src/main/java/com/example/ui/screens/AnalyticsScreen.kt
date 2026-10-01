@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -62,6 +63,11 @@ import com.example.data.model.TransactionEntity
 import com.example.data.model.TransactionType
 import com.example.ui.components.D3SpendingTrendsChart
 import com.example.ui.components.ExportReportDialog
+import com.example.ui.components.CategorySpendingThresholdDialog
+import com.example.ui.components.CurrencyExchangeWidget
+import com.example.service.CategoryThresholdEngine
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Edit
 import com.example.ui.theme.AmberOrange
 import com.example.ui.theme.CrimsonDanger
 import com.example.ui.theme.CyberCyan
@@ -92,6 +98,8 @@ fun AnalyticsScreen(
     var showExportModal by remember { mutableStateOf(false) }
     var showAddGoalModal by remember { mutableStateOf(false) }
     var selectedGoalForDeposit by remember { mutableStateOf<SavingsGoalEntity?>(null) }
+    var showThresholdDialog by remember { mutableStateOf(false) }
+    var selectedCategoryForThreshold by remember { mutableStateOf<TransactionCategory?>(null) }
 
     val categoryColors = mapOf(
         TransactionCategory.FOOD to Color(0xFFF59E0B),
@@ -205,17 +213,64 @@ fun AnalyticsScreen(
             )
         }
 
-        // --- 3. Category Budget Breakdown ---
+        // --- 2.5 Recharts Monthly Spending Trends Dashboard ---
         item {
-            Text("CATEGORY ALLOCATIONS & LIMITS", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+            com.example.ui.components.RechartsSpendingTrendsChart(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // --- 2.8. Live Foreign Exchange & Currency Converter ---
+        item {
+            CurrencyExchangeWidget(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // --- 3. Category Budget Breakdown & Threshold Limits ---
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("CATEGORY ALLOCATIONS & LIMITS", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                TextButton(
+                    onClick = {
+                        selectedCategoryForThreshold = null
+                        showThresholdDialog = true
+                    },
+                    modifier = Modifier.testTag("btn_manage_category_thresholds")
+                ) {
+                    Icon(imageVector = Icons.Default.NotificationsActive, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Threshold Alerts (80%/100%)", color = CyberCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         items(budgets, key = { it.id }) { budget ->
             val color = categoryColors[budget.category] ?: CyberCyan
-            val isOverspent = budget.currentSpent > budget.monthlyLimit
+            val ratio = if (budget.monthlyLimit > 0) (budget.currentSpent / budget.monthlyLimit).toFloat() else 0f
+            val percentInt = (ratio * 100f).toInt()
+            val isOverspent = ratio >= 1.0f
+            val isWarning80 = ratio >= 0.80f && ratio < 1.0f
+
+            val statusColor = when {
+                isOverspent -> CrimsonDanger
+                isWarning80 -> AmberOrange
+                else -> EmeraldSuccess
+            }
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        selectedCategoryForThreshold = budget.category
+                        showThresholdDialog = true
+                    },
                 colors = CardDefaults.cardColors(containerColor = NavyCard),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -227,32 +282,72 @@ fun AnalyticsScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(color))
-                            Text(budget.category.name, color = TextWhite, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(
+                                CategoryThresholdEngine.formatCategoryName(budget.category),
+                                color = TextWhite,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
                         }
 
-                        Text(
-                            text = "$${"%,.0f".format(budget.currentSpent)} of $${"%,.0f".format(budget.monthlyLimit)}",
-                            color = if (isOverspent) CrimsonDanger else TextWhite,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "$${"%,.0f".format(budget.currentSpent)} of $${"%,.0f".format(budget.monthlyLimit)}",
+                                color = statusColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            IconButton(
+                                onClick = {
+                                    selectedCategoryForThreshold = budget.category
+                                    showThresholdDialog = true
+                                },
+                                modifier = Modifier.size(24.dp).testTag("btn_edit_limit_${budget.category.name}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Threshold Limit",
+                                    tint = CyberCyan,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
                     }
 
                     LinearProgressIndicator(
-                        progress = { (budget.currentSpent / budget.monthlyLimit).toFloat().coerceIn(0f, 1f) },
+                        progress = { ratio.coerceIn(0f, 1f) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
-                        color = if (isOverspent) CrimsonDanger else color,
+                        color = statusColor,
                         trackColor = Navy900
                     )
 
-                    if (isOverspent) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = CrimsonDanger, modifier = Modifier.size(14.dp))
-                            Text("Over budget by $${"%.2f".format(budget.currentSpent - budget.monthlyLimit)}", color = CrimsonDanger, fontSize = 11.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isOverspent) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = CrimsonDanger, modifier = Modifier.size(14.dp))
+                                Text("🚨 100% Exceeded by $${"%.2f".format(budget.currentSpent - budget.monthlyLimit)} ($percentInt%)", color = CrimsonDanger, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (isWarning80) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = AmberOrange, modifier = Modifier.size(14.dp))
+                                Text("⚠️ 80% Threshold Reached ($percentInt% used)", color = AmberOrange, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Text("✓ Within Budget ($percentInt% used)", color = EmeraldSuccess, fontSize = 11.sp)
                         }
+
+                        Text(
+                            text = "Alerts Arm at 80% & 100%",
+                            color = TextMuted,
+                            fontSize = 10.sp
+                        )
                     }
                 }
             }
@@ -401,6 +496,18 @@ fun AnalyticsScreen(
         reportContent = viewModel.exportStatementSummary(),
         onDismiss = { showExportModal = false }
     )
+
+    // --- Category Spending Limits & Threshold Alerts Dialog ---
+    if (showThresholdDialog) {
+        CategorySpendingThresholdDialog(
+            viewModel = viewModel,
+            initialCategory = selectedCategoryForThreshold,
+            onDismiss = {
+                showThresholdDialog = false
+                selectedCategoryForThreshold = null
+            }
+        )
+    }
 }
 
 @Composable

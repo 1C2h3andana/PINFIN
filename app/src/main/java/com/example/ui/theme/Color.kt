@@ -25,6 +25,11 @@ val CrimsonLight = Color(0xFFF87171)
 val WarningAmber = Color(0xFFF59E0B)
 val PurpleTech = Color(0xFF8B5CF6)
 
+// Color aliases for threshold and status warnings
+val CrimsonError = CrimsonDanger
+val AmberWarning = AmberOrange
+val NeonCyan = CyberCyan
+
 // Text Colors
 val TextWhite = Color(0xFFF8FAFC)
 val TextMuted = Color(0xFF94A3B8)

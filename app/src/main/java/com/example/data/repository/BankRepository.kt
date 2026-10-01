@@ -774,6 +774,25 @@ class BankRepository(private val bankDao: BankDao) {
         bankDao.insertNotification(notif)
 
         logSecurityEvent(SecurityEventType.LOGIN_SUCCESS, "Transfer of $amount completed to $recipient", RiskLevel.LOW)
+
+        // Evaluate category spending threshold after debit
+        try {
+            com.example.service.CategoryThresholdEngine.getStoredContext()?.let { ctx ->
+                val updatedBudget = bankDao.getAllBudgets().first().find { it.category == category }
+                if (updatedBudget != null) {
+                    com.example.service.CategoryThresholdEngine.evaluateAndNotifyCategory(
+                        context = ctx,
+                        category = category,
+                        monthlyLimit = updatedBudget.monthlyLimit,
+                        currentSpent = updatedBudget.currentSpent,
+                        forceNotify = false
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("BankRepository", "Failed to evaluate category threshold post-transfer", e)
+        }
+
         return Pair(true, completedTx.copy(id = txId))
     }
 
@@ -998,6 +1017,22 @@ class BankRepository(private val bankDao: BankDao) {
             severity = severity
         )
         bankDao.insertSecurityLog(log)
+    }
+
+    // --- Category Budget Limit Operations ---
+    suspend fun updateBudgetLimit(
+        category: TransactionCategory,
+        newLimit: Double
+    ): BudgetEntity {
+        val currentBudgets = bankDao.getAllBudgets().first()
+        val existing = currentBudgets.find { it.category == category }
+        val updated = if (existing != null) {
+            existing.copy(monthlyLimit = newLimit)
+        } else {
+            BudgetEntity(category = category, monthlyLimit = newLimit, currentSpent = 0.0)
+        }
+        bankDao.insertBudgets(listOf(updated))
+        return updated
     }
 
     companion object {

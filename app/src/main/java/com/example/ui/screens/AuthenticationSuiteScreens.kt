@@ -320,8 +320,9 @@ fun AuthSecurityHubScreen(
                     viewModel = viewModel,
                     onMfaSuccess = { selectedPage = AuthPageType.DEVICE_VERIFICATION }
                 )
-                AuthPageType.BIOMETRIC_LOGIN -> BiometricLoginScreen(
+                AuthPageType.BIOMETRIC_LOGIN -> BiometricAuthenticationScreen(
                     viewModel = viewModel,
+                    onAuthSuccess = { selectedPage = AuthPageType.LOGIN },
                     onFallbackToPassword = { selectedPage = AuthPageType.LOGIN }
                 )
                 AuthPageType.FACE_RECOGNITION -> FaceRecognitionScreen(

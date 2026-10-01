@@ -55,10 +55,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -76,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.model.AccountEntity
+import com.example.data.model.TransactionCategory
 import com.example.data.model.TransactionEntity
 import com.example.data.model.TransactionStatus
 import com.example.data.model.TransactionType
@@ -84,6 +87,14 @@ import com.example.ui.components.PulsingStatusBadge
 import com.example.ui.components.RiskBadge
 import com.example.ui.components.TransactionRowItem
 import com.example.ui.components.VirtualCardItem
+import com.example.ui.components.BackupReminderBanner
+import com.example.ui.components.VoiceSpendingQueryWidget
+import com.example.ui.components.CurrencyExchangeWidget
+import com.example.ui.components.CategorySpendingThresholdDialog
+import com.example.ui.components.MonthOverMonthSpendingLineChart
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.NotificationsActive
 import com.example.ui.theme.AmberOrange
 import com.example.ui.theme.CrimsonDanger
 import com.example.ui.theme.CyberCyan
@@ -129,8 +140,41 @@ fun HomeScreen(
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val totalNetWorth by viewModel.totalNetWorth.collectAsStateWithLifecycle()
+    val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
 
     var selectedTxForDetails by remember { mutableStateOf<TransactionEntity?>(null) }
+    var showThresholdDialog by remember { mutableStateOf(false) }
+    var dashboardTab by remember { mutableIntStateOf(0) }
+    var selectedAccountId by remember { mutableStateOf<Long?>(null) }
+    var isPrivacyMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategoryFilter by remember { mutableStateOf<TransactionCategory?>(null) }
+    var selectedFilterMode by remember { mutableStateOf(TransactionFilterMode.ALL) }
+
+    val filteredTransactions = remember(transactions, searchQuery, selectedCategoryFilter, selectedFilterMode, selectedAccountId) {
+        transactions.filter { tx ->
+            val matchesAccount = selectedAccountId == null || tx.accountId == selectedAccountId
+
+            val matchesQuery = searchQuery.isBlank() ||
+                    tx.title.contains(searchQuery, ignoreCase = true) ||
+                    tx.recipient.contains(searchQuery, ignoreCase = true) ||
+                    tx.upiOrHandle.contains(searchQuery, ignoreCase = true) ||
+                    tx.amount.toString().contains(searchQuery)
+
+            val matchesCategory = selectedCategoryFilter == null || tx.category == selectedCategoryFilter
+
+            val matchesFilterMode = when (selectedFilterMode) {
+                TransactionFilterMode.ALL -> true
+                TransactionFilterMode.EXPENSES -> tx.type == TransactionType.DEBIT
+                TransactionFilterMode.INCOME -> tx.type == TransactionType.CREDIT
+                TransactionFilterMode.FLAGGED -> tx.status == TransactionStatus.BLOCKED_FRAUD ||
+                        tx.status == TransactionStatus.FLAGGED_REVIEW ||
+                        tx.riskScore >= 50
+            }
+
+            matchesAccount && matchesQuery && matchesCategory && matchesFilterMode
+        }
+    }
 
     val totalIncomeMonth = remember(transactions) {
         transactions.filter { it.type == TransactionType.CREDIT }.sumOf { it.amount }
@@ -202,188 +246,189 @@ fun HomeScreen(
                     }
                 }
 
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // System-wide Dark/Light Mode Dashboard Toggle Button
+                    Surface(
+                        color = if (isDarkMode) NavyCard else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isDarkMode) Navy700 else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier
+                            .clickable { viewModel.toggleDarkMode() }
+                            .testTag("dashboard_dark_mode_toggle")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = if (isDarkMode) "Switch to Light Mode" else "Switch to Dark Mode",
+                                tint = GoldAccent,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = if (isDarkMode) "Light" else "Dark",
+                                color = if (isDarkMode) TextWhite else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = if (isDarkMode) NavyCard else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isDarkMode) Navy700 else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier
+                            .clickable { viewModel.lockAppBiometric() }
+                            .testTag("dashboard_lock_biometric_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fingerprint,
+                                contentDescription = "Lock SmartBank Vault with Biometrics",
+                                tint = CyberCyan,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "Lock",
+                                color = if (isDarkMode) TextWhite else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = if (isDarkMode) NavyCard else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isDarkMode) Navy700 else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.clickable { onOpenAuth() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(EmeraldSuccess))
+                            Text("JWT Active", color = CyberCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- 1.5. 30-Day Periodic Inactivity Backup Reminder ---
+        item {
+            BackupReminderBanner(
+                viewModel = viewModel,
+                onOpenExportDialog = onOpenStatements
+            )
+        }
+
+        // --- 1.6 Dashboard Mode Selector (Live Banking vs Extended Suite) ---
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().testTag("dashboard_mode_tabs"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Surface(
-                    color = NavyCard,
-                    shape = RoundedCornerShape(20.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Navy700),
-                    modifier = Modifier.clickable { onOpenAuth() }
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { dashboardTab = 0 }
+                        .testTag("tab_live_dashboard"),
+                    color = if (dashboardTab == 0) CyberCyan.copy(alpha = 0.2f) else NavyCard,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (dashboardTab == 0) CyberCyan else Navy700)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(EmeraldSuccess))
-                        Text("JWT Active", color = CyberCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // --- 2. Top Hero Net Worth & Security Shield Banner ---
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
-                    .testTag("net_worth_hero_card"),
-                colors = CardDefaults.cardColors(containerColor = NavyCard),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(NavyCardLight, NavyCard)
-                            )
+                        Icon(
+                            imageVector = Icons.Default.AccountBalance,
+                            contentDescription = null,
+                            tint = if (dashboardTab == 0) CyberCyan else TextMuted,
+                            modifier = Modifier.size(16.dp)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Live Dashboard",
+                            color = if (dashboardTab == 0) CyberCyan else TextMuted,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { dashboardTab = 1 }
+                        .testTag("tab_extended_ecosystem"),
+                    color = if (dashboardTab == 1) PurpleTech.copy(alpha = 0.2f) else NavyCard,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (dashboardTab == 1) PurpleTech else Navy700)
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_bank_hero),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .align(Alignment.BottomEnd),
-                        contentScale = ContentScale.Crop,
-                        alpha = 0.15f
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Header row with Shield status
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                val animatedNetWorth by animateFloatAsState(
-                                    targetValue = totalNetWorth.toFloat(),
-                                    animationSpec = tween(durationMillis = 900),
-                                    label = "netWorthAnim"
-                                )
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(
-                                        text = "TOTAL CONSOLIDATED NET WORTH",
-                                        color = CyberCyan,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        letterSpacing = 1.5.sp
-                                    )
-                                    PulsingStatusBadge(pulseColor = EmeraldSuccess, badgeSize = 6.dp)
-                                }
-                                Text(
-                                    text = "$${"%,.2f".format(animatedNetWorth.toDouble())}",
-                                    color = TextWhite,
-                                    fontSize = 32.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Surface(
-                                color = if (blockedScamsCount > 0) CrimsonDanger.copy(alpha = 0.2f) else EmeraldSuccess.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(20.dp),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (blockedScamsCount > 0) CrimsonDanger.copy(alpha = 0.5f) else EmeraldSuccess.copy(alpha = 0.5f)
-                                ),
-                                modifier = Modifier.clickable { onNavigateSecurity() }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Shield,
-                                        contentDescription = "Shield Active",
-                                        tint = if (blockedScamsCount > 0) CrimsonDanger else EmeraldSuccess,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = if (blockedScamsCount > 0) "$blockedScamsCount Threats Blocked" else "AI Shield Active",
-                                        color = if (blockedScamsCount > 0) CrimsonDanger else EmeraldSuccess,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        // Income / Outflow summary bar
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Navy900.copy(alpha = 0.6f))
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceAround,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(EmeraldSuccess.copy(alpha = 0.2f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDownward,
-                                        contentDescription = "Income",
-                                        tint = EmeraldSuccess,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Column {
-                                    Text("Cash Flow In", color = TextMuted, fontSize = 11.sp)
-                                    Text("+$${"%,.2f".format(totalIncomeMonth)}", color = EmeraldSuccess, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .width(1.dp)
-                                    .height(30.dp)
-                                    .background(Navy700)
-                            )
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(CyberCyan.copy(alpha = 0.2f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowUpward,
-                                        contentDescription = "Spent",
-                                        tint = CyberCyan,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Column {
-                                    Text("Outflow", color = TextMuted, fontSize = 11.sp)
-                                    Text("-$${"%,.2f".format(totalSpentMonth)}", color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = if (dashboardTab == 1) PurpleTech else TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Extended Ecosystem",
+                            color = if (dashboardTab == 1) PurpleTech else TextMuted,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
         }
+
+        if (dashboardTab == 0) {
+            // --- 2. Real-Time Account Balance Summary Card ---
+            item {
+                AccountBalanceSummaryCard(
+                    accounts = accounts,
+                    totalNetWorth = totalNetWorth,
+                    selectedAccountId = selectedAccountId,
+                    isPrivacyMode = isPrivacyMode,
+                    onTogglePrivacyMode = { isPrivacyMode = !isPrivacyMode },
+                    onSelectAccount = { accId ->
+                        selectedAccountId = if (selectedAccountId == accId) null else accId
+                    },
+                    onQuickDeposit = { accId -> viewModel.openDepositDialog(accId) },
+                    onQuickTransfer = { _ -> onNavigateTransfer() },
+                    onToggleFreeze = { accId, isFrozen -> viewModel.toggleCardFreeze(accId, isFrozen) },
+                    modifier = Modifier.testTag("net_worth_hero_card")
+                )
+            }
 
         // --- 3. Primary Action Hub (Deposit, Withdraw, Transfer, Investments) ---
         item {
@@ -471,7 +516,180 @@ fun HomeScreen(
                         onClick = onNavigateAdmin
                     )
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    QuickActionButton(
+                        icon = Icons.Default.NotificationsActive,
+                        label = "Thresholds",
+                        bgColor = AmberOrange,
+                        iconTint = Navy900,
+                        testTag = "quick_action_thresholds",
+                        onClick = { showThresholdDialog = true }
+                    )
+                    QuickActionButton(
+                        icon = Icons.Default.Description,
+                        label = "Export CSV",
+                        bgColor = CyberCyan,
+                        iconTint = Navy900,
+                        testTag = "quick_action_export_csv",
+                        onClick = onOpenStatements
+                    )
+                    QuickActionButton(
+                        icon = Icons.Default.AutoAwesome,
+                        label = "AI Advisor",
+                        bgColor = ElectricBlue,
+                        iconTint = TextWhite,
+                        testTag = "quick_action_advisor",
+                        onClick = onNavigateAiAdvisor
+                    )
+                    QuickActionButton(
+                        icon = Icons.Default.Security,
+                        label = "Security",
+                        bgColor = PurpleTech,
+                        iconTint = TextWhite,
+                        testTag = "quick_action_security",
+                        onClick = onNavigateSecurity
+                    )
+                }
             }
+        }
+
+            // --- 4. Recent Bank Transactions Header & Filter Suite ---
+            item {
+                RecentTransactionsSectionHeader(
+                    totalCount = filteredTransactions.size,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    selectedFilterMode = selectedFilterMode,
+                    onFilterModeSelected = { selectedFilterMode = it },
+                    selectedCategory = selectedCategoryFilter,
+                    onCategorySelected = { selectedCategoryFilter = it },
+                    onExportStatements = onOpenStatements
+                )
+            }
+
+            // --- 5. Recent Bank Transactions List ---
+            if (filteredTransactions.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("empty_transactions_card"),
+                        colors = CardDefaults.cardColors(containerColor = NavyCard),
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Navy700)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "No Recent Transactions",
+                                color = TextWhite,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (searchQuery.isNotBlank() || selectedCategoryFilter != null || selectedFilterMode != TransactionFilterMode.ALL)
+                                    "No transactions match your current search or category filters."
+                                else
+                                    "No transaction activity found.",
+                                color = TextMuted,
+                                fontSize = 12.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            if (searchQuery.isNotBlank() || selectedCategoryFilter != null || selectedFilterMode != TransactionFilterMode.ALL) {
+                                androidx.compose.material3.TextButton(
+                                    onClick = {
+                                        searchQuery = ""
+                                        selectedCategoryFilter = null
+                                        selectedFilterMode = TransactionFilterMode.ALL
+                                        selectedAccountId = null
+                                    }
+                                ) {
+                                    Text("Reset Filters", color = CyberCyan, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                items(filteredTransactions.take(15), key = { it.id }) { tx ->
+                    RecentTransactionCardItem(
+                        tx = tx,
+                        account = accounts.find { it.id == tx.accountId },
+                        onClick = { selectedTxForDetails = tx },
+                        onFlagFraud = { viewModel.flagTransactionAsFraud(tx.id) }
+                    )
+                }
+            }
+
+            // --- 6. Month-Over-Month Spending Trends Line Chart ---
+            item {
+                MonthOverMonthSpendingLineChart(
+                    viewModel = viewModel,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // --- 7. Button to Explore Extended Ecosystem ---
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { dashboardTab = 1 }
+                        .testTag("btn_switch_to_extended_ecosystem"),
+                    colors = CardDefaults.cardColors(containerColor = NavyCard),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PurpleTech.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(PurpleTech.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = PurpleTech, modifier = Modifier.size(20.dp))
+                            }
+                            Column {
+                                Text("Explore Extended Financial OS", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Forex, Voice AI, Threat Radar & 15 Portal Pages", color = TextMuted, fontSize = 11.sp)
+                            }
+                        }
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = PurpleTech, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        } else {
+            // dashboardTab == 1: Extended Ecosystem
+
+        // --- 3.2. Voice Financial Intelligence (Speech-to-Text Room Query Engine) ---
+        item {
+            VoiceSpendingQueryWidget(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // --- 3.5. Live Foreign Exchange Rates (Retrofit) & Currency Conversion ---
+        item {
+            CurrencyExchangeWidget(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         // --- 4. Virtual Cards Carousel ---
@@ -939,55 +1157,56 @@ fun HomeScreen(
             }
         }
 
-        // --- 6. Recent Transactions with Risk Scores & Statements Button ---
+        // --- 5.11 Month-Over-Month Spending Trends Line Chart ---
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "LIVE TRANSACTION AUDIT FEED",
-                    color = TextMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp
-                )
-                Text(
-                    text = "📄 Export PDF / CSV",
-                    color = CyberCyan,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { onOpenStatements() }
-                )
-            }
+            MonthOverMonthSpendingLineChart(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
-        if (transactions.isEmpty()) {
-            item {
-                Surface(
-                    color = Navy900,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "No recent transactions found.",
-                        color = TextMuted,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(20.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            items(transactions.take(8)) { tx ->
-                TransactionRowItem(
-                    tx = tx,
-                    onFlagFraud = { viewModel.flagTransactionAsFraud(tx.id) },
-                    onClick = { selectedTxForDetails = tx }
-                )
+        // --- 5.12 Recharts Monthly Spending Trends Dashboard ---
+        item {
+            com.example.ui.components.RechartsSpendingTrendsChart(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // --- 6. Back to Live Dashboard Button ---
+        item {
+            Button(
+                onClick = { dashboardTab = 0 },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_back_to_live_dashboard"),
+                colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Back to Live Dashboard", color = Navy900, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
+    }
+}
+
+    if (showThresholdDialog) {
+        CategorySpendingThresholdDialog(
+            viewModel = viewModel,
+            onDismiss = { showThresholdDialog = false }
+        )
+    }
+
+    if (selectedTxForDetails != null) {
+        val tx = selectedTxForDetails!!
+        TransactionDetailDialog(
+            tx = tx,
+            account = accounts.find { it.id == tx.accountId },
+            onDismiss = { selectedTxForDetails = null },
+            onFlagFraud = {
+                viewModel.flagTransactionAsFraud(tx.id)
+                selectedTxForDetails = null
+            }
+        )
     }
 }
 

@@ -23,9 +23,11 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditScore
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,6 +39,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -90,7 +93,8 @@ fun LoanCreditScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("EMI Calculator", "AI Loan Eligibility", "Credit Score")
+    val tabs = listOf("Loan Predictor (DTI)", "EMI Calculator", "AI Underwriter", "Credit Score")
+    val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
 
     val loanPrincipal by viewModel.loanPrincipal.collectAsStateWithLifecycle()
     val loanRate by viewModel.loanRate.collectAsStateWithLifecycle()
@@ -106,9 +110,14 @@ fun LoanCreditScreen(
     var loanTypeDropdownExpanded by remember { mutableStateOf(false) }
     val loanTypeOptions = listOf("Personal Loan", "Home Loan", "Vehicle Loan", "Education Loan")
 
+    val screenBg = if (isDarkMode) Color.Transparent else MaterialTheme.colorScheme.background
+    val textTitle = if (isDarkMode) TextWhite else MaterialTheme.colorScheme.onBackground
+    val cardBg = if (isDarkMode) NavyCard else MaterialTheme.colorScheme.surfaceVariant
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .background(screenBg)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 80.dp)
@@ -123,7 +132,7 @@ fun LoanCreditScreen(
             )
             Text(
                 text = "Loan Prediction & EMI Analytics",
-                color = TextWhite,
+                color = textTitle,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -133,7 +142,7 @@ fun LoanCreditScreen(
         item {
             TabRow(
                 selectedTabIndex = selectedTab,
-                containerColor = NavyCard,
+                containerColor = cardBg,
                 contentColor = CyberCyan,
                 indicator = { tabPositions ->
                     TabRowDefaults.Indicator(
@@ -150,9 +159,9 @@ fun LoanCreditScreen(
                         text = {
                             Text(
                                 text = title,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedTab == index) CyberCyan else TextMuted
+                                color = if (selectedTab == index) CyberCyan else (if (isDarkMode) TextMuted else MaterialTheme.colorScheme.onSurfaceVariant)
                             )
                         },
                         modifier = Modifier.testTag("loan_tab_$index")
@@ -163,6 +172,16 @@ fun LoanCreditScreen(
 
         when (selectedTab) {
             0 -> {
+                // --- TAB 0: LOCAL LOGIC LOAN PREDICTION INPUT FORM (DEBT-TO-INCOME) ---
+                item {
+                    com.example.ui.components.LoanPredictionFormCard(
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            1 -> {
                 // --- TAB 1: EMI CALCULATOR ---
                 item {
                     Card(
@@ -279,13 +298,88 @@ fun LoanCreditScreen(
                 }
             }
 
-            1 -> {
+            2 -> {
                 // --- TAB 2: GEMINI AI LOAN ELIGIBILITY PREDICTION ---
                 item {
                     val geminiPrediction by viewModel.geminiLoanPrediction.collectAsStateWithLifecycle()
                     val isEvaluating by viewModel.isEvaluatingLoanWithGemini.collectAsStateWithLifecycle()
+                    var showPersonalizedUnderwriterDialog by remember { mutableStateOf(false) }
 
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        // Card to launch Full Interactive Financial Inputs Underwriter
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showPersonalizedUnderwriterDialog = true }
+                                .testTag("btn_open_personalized_gemini_underwriter"),
+                            colors = CardDefaults.cardColors(containerColor = ElectricBlue.copy(alpha = 0.2f)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Tune,
+                                        contentDescription = null,
+                                        tint = CyberCyan,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            "Personalized AI Underwriting Suite",
+                                            color = TextWhite,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                        Text(
+                                            "Tune income, debt, collateral & get Gemini 3.5 Flash predictions",
+                                            color = TextMuted,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = GoldAccent)
+                            }
+                        }
+
+                        if (showPersonalizedUnderwriterDialog) {
+                            androidx.compose.ui.window.Dialog(
+                                onDismissRequest = { showPersonalizedUnderwriterDialog = false },
+                                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                            ) {
+                                Surface(
+                                    modifier = Modifier.fillMaxSize(),
+                                    color = Navy900
+                                ) {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = GoldAccent)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Personalized Loan Underwriting", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                            }
+                                            IconButton(onClick = { showPersonalizedUnderwriterDialog = false }) {
+                                                Icon(Icons.Default.Close, contentDescription = "Close", tint = TextWhite)
+                                            }
+                                        }
+                                        LoanEligibilityPredictionScreen(modifier = Modifier.fillMaxSize())
+                                    }
+                                }
+                            }
+                        }
+
                         // Quick Action Card to Predict with Gemini
                         Card(
                             modifier = Modifier.fillMaxWidth().testTag("gemini_predict_trigger_card"),
@@ -593,7 +687,7 @@ fun LoanCreditScreen(
                 }
             }
 
-            2 -> {
+            3 -> {
                 // --- TAB 3: CREDIT SCORE ANALYZER ---
                 item {
                     Card(
